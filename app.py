@@ -3,7 +3,7 @@ from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
 from diffusers import UniPCMultistepScheduler
 import torch
 import torchvision.transforms as T
-import torchvision.transforms.v2 as T2
+#import torchvision.transforms.v2 as T2
 import cv2
 from PIL import Image
 import numpy as np
@@ -12,8 +12,8 @@ output_res = (768,768)
 
 conditioning_image_transforms = T.Compose(
     [
-        T2.ScaleJitter(target_size=output_res, scale_range=(0.5, 3.0)),
-        T2.RandomCrop(size=output_res, pad_if_needed=True, padding_mode="symmetric"),
+        #T2.ScaleJitter(target_size=output_res, scale_range=(0.5, 3.0)),
+        #T2.RandomCrop(size=output_res, pad_if_needed=True, padding_mode="symmetric"),
         T.ToTensor(),
         T.Normalize([0.5], [0.5]),
     ]
