@@ -1,5 +1,5 @@
 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-jax[cuda11_cudnn805]
+jax[cuda11_pip]
 jaxlib
 git+https://github.com/huggingface/diffusers@main
 opencv-python
