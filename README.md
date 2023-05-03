@@ -14,7 +14,7 @@ tags:
 - Text-To-Image
 - Diffusers
 - Controlnet
-- Stable-Diffusio
+- Stable-Diffusion
 ---
 
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
