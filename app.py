@@ -61,7 +61,7 @@ gr.Interface(
         gr.Image(type="pil"),
     ],
     outputs=gr.Gallery().style(grid=[2], height="auto"),
-    title="Generate controlled outputs with Categorical Conditioning on Waifu Diffusion 1.5 beta 2.",
+    title="Generate controlled outputs with Categorical Conditioning on Stable Diffusion 1.5 beta 2.",
     description="This Space uses image examples as style conditioning.",
     examples=[["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "low quality", "wikipe_cond_1.png"]],
     allow_flagging=False,
