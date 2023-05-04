@@ -1,47 +1,51 @@
 import gradio as gr
-from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
-from diffusers import UniPCMultistepScheduler
-import torch
-import torchvision.transforms as T
-#import torchvision.transforms.v2 as T2
-import cv2
-from PIL import Image
+import jax
 import numpy as np
+import jax.numpy as jnp
+import flax.jax_utils import replicate
+import flax.training.common_utils import shard
+from PIL import Image
+from diffusers import FlaxStableDiffusionControlNetPipeline, FlaxControlNetModel
+from diffusers import UniPCMultistepScheduler
+
+
+def create_key(seed=0):
+    return jax.random.PRNGKey(seed)
+
 
 output_res = (768,768)
 
-conditioning_image_transforms = T.Compose(
-    [
-        #T2.ScaleJitter(target_size=output_res, scale_range=(0.5, 3.0)),
-        #T2.RandomCrop(size=output_res, pad_if_needed=True, padding_mode="symmetric"),
-        T.ToTensor(),
-        T.Normalize([0.5], [0.5]),
-    ]
-)
 
-cnet = ControlNetModel.from_pretrained("./models/catcon-controlnet-wd", torch_dtype=torch.float32, from_flax=True)
-pipe = StableDiffusionControlNetPipeline.from_pretrained(
-        "./models/wd-1-5-b2",
-        controlnet=cnet,
-        torch_dtype=torch.float32,
+
+def conditioning_image_transforms(image):
+    image = jnp.array(image) / 255.0 #convert the image into JAX array and normalize to [0,1]
+    image = (image - 0.5) * 2 # normalize to [-1, 1]
+    return image
+
+
+controlnet, controlnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16
+)
+pipe = FlaxStableDiffusionControlNetPipeline.from_pretrained(
+        "./models/wd-1-5-b2", dtype=jnp.bfloat16
         )
 pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
-generator = torch.manual_seed(0)
+key = jax.random.PRNGKey(0)
 
 # inference function takes prompt, negative prompt and image
 def infer(prompt, negative_prompt, image):
-    # implement your inference function here
+    if seed == 0:
+        seed = jax.random.randint(jax.random.PRNGKey(0), (), 1, 1001)[0] #generate a random seed if slider is set to 0
 
-    #cond_input = conditioning_image_transforms(np.array(image)))
+    key = create_key(seed) #using the create_key function created above
     
     output = pipe(
         prompt,
         image,
-        generator=generator,
+        generator=key, #using the JAX random number generator defined above
         num_images_per_prompt=1,
         num_inference_steps=20
-            )
+    )
 
     return output.images
 
@@ -59,6 +63,7 @@ gr.Interface(
             placeholder="low quality",
         ),
         gr.Image(type="pil"),
+        gr.Slider(minimum=0, maximum=100, step=1, default=0, label="Seed (0 for random seed)")
     ],
     outputs=gr.Gallery().style(grid=[2], height="auto"),
     title="Generate controlled outputs with Categorical Conditioning on Stable Diffusion 1.5 beta 2.",
@@ -66,4 +71,3 @@ gr.Interface(
     examples=[["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "low quality", "wikipe_cond_1.png"]],
     allow_flagging=False,
 ).launch(enable_queue=True)
-
