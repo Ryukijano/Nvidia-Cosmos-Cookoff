@@ -2,8 +2,8 @@ import gradio as gr
 import jax
 import numpy as np
 import jax.numpy as jnp
-import flax.jax_utils import replicate
-import flax.training.common_utils import shard
+from flax.jax_utils import replicate
+from flax.training.common_utils import shard
 from PIL import Image
 from diffusers import FlaxStableDiffusionControlNetPipeline, FlaxControlNetModel
 from diffusers import UniPCMultistepScheduler
