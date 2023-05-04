@@ -26,7 +26,7 @@ def conditioning_image_transforms(image):
 controlnet, controlnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16
 )
 pipe = FlaxStableDiffusionControlNetPipeline.from_pretrained(
-        "./models/wd-1-5-b2", dtype=jnp.bfloat16
+        "./models/wd-1-5-b2", dtype=jnp.bfloat16, from_pt=True
         )
 pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
 
