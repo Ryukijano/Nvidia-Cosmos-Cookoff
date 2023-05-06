@@ -35,15 +35,15 @@ pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
         revision="flax",
         dtype=jnp.bfloat16,
         )
-#scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
-#    "./models/wd-1-5-b2-flax",
-#    subfolder="scheduler"
-#)
-#params["scheduler"] = scheduler_state
+scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
+    "./models/wd-1-5-b2-flax",
+    subfolder="scheduler"
+)
+params["scheduler"] = scheduler_state
 
-#scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-#pipe.enable_model_cpu_offload()
-#pipe.enable_xformers_memory_efficient_attention()
+scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+pipe.enable_model_cpu_offload()
+pipe.enable_xformers_memory_efficient_attention()
 
 def get_random(seed):
     return jax.random.PRNGKey(seed)
