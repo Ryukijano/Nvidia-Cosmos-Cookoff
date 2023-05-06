@@ -43,7 +43,6 @@ params["scheduler"] = scheduler_state
 
 scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
 pipe.enable_model_cpu_offload()
-pipe.enable_xformers_memory_efficient_attention()
 
 def get_random(seed):
     return jax.random.PRNGKey(seed)
