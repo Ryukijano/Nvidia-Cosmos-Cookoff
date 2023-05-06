@@ -28,15 +28,15 @@ conditioning_image_transforms = T.Compose(
     ]
 )
 
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True)
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/CatCon-Controlnet-WD-1-5-b2R/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True)
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
-        "./models/wd-1-5-b2-flax", 
+        "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax", 
         controlnet=cnet,
         revision="flax",
         dtype=jnp.bfloat16,
         )
 scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
-    "./models/wd-1-5-b2-flax",
+    "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax",
     subfolder="scheduler"
 )
 params["scheduler"] = scheduler_state
