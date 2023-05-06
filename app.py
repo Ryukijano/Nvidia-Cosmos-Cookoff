@@ -28,9 +28,9 @@ conditioning_image_transforms = T.Compose(
     ]
 )
 
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("./models/CatCon-One-Shot-Controlnet-SD-1-5-b2", dtype=jnp.bfloat16, from_flax=True)
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/CatCon-Controlnet-WD-1-5-b2R", dtype=jnp.bfloat16, from_flax=True)
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
-        "./models/wd-1-5-b2-flax",
+        "./models/wd-1-5-b2-flax", 
         controlnet=cnet,
         revision="flax",
         dtype=jnp.bfloat16,
