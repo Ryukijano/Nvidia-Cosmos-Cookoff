@@ -28,22 +28,21 @@ conditioning_image_transforms = T.Compose(
         #T.Normalize([0.5], [0.5]),
     ]
 )
-api_token = os.getenv("HF_API_TOKEN")
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/CatCon-Controlnet-WD-1-5-b2R", dtype=jnp.bfloat16, from_flax=True, api_token = os.getenv("HF_API_TOKEN"))
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("Cognomen/CatCon-Controlnet-WD-1-5-b2", dtype=jnp.bfloat16, from_flax=True, api_token = os.getenv("HF_API_TOKEN"))
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
-        "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax", 
+        "Cognomen/CatCon-Controlnet-WD-1-5-b2", 
         controlnet=cnet,
         revision="flax",
         dtype=jnp.bfloat16,
         )
-scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
-    "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax",
-    subfolder="scheduler"
-)
-params["scheduler"] = scheduler_state
+#scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
+#    "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax",
+#    subfolder="scheduler"
+#)
+#params["scheduler"] = scheduler_state
 
-scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-pipe.enable_model_cpu_offload()
+#scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+#pipe.enable_model_cpu_offload()
 
 def get_random(seed):
     return jax.random.PRNGKey(seed)
