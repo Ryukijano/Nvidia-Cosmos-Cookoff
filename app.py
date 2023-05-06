@@ -8,18 +8,16 @@ import torchvision
 import torchvision.transforms as T
 from flax.jax_utils import replicate
 from flax.training.common_utils import shard
+#from torchvision.transforms import v2 as T2
 import cv2
 import PIL
 from PIL import Image
 import numpy as np
 import jax
 
-def create_key(seed=0):
-    return jax.random.PRNGKey(seed)
-
+import torchvision.transforms.functional as F
 
 output_res = (768,768)
-
 
 conditioning_image_transforms = T.Compose(
     [
@@ -30,17 +28,26 @@ conditioning_image_transforms = T.Compose(
     ]
 )
 
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True)
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True)
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
         "./models/wd-1-5-b2-flax",
         controlnet=cnet,
         revision="flax",
         dtype=jnp.bfloat16,
         )
+#scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
+#    "./models/wd-1-5-b2-flax",
+#    subfolder="scheduler"
+#)
+#params["scheduler"] = scheduler_state
 
-key = jax.random.PRNGKey(0)
+#scheduler = FlaxDPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+#pipe.enable_model_cpu_offload()
+#pipe.enable_xformers_memory_efficient_attention()
 
-# inference function takes prompt, negative prompt and image
+def get_random(seed):
+    return jax.random.PRNGKey(seed)
+
 # inference function takes prompt, negative prompt and image
 def infer(prompt, negative_prompt, image):
     # implement your inference function here
@@ -92,12 +99,16 @@ gr.Interface(
             max_lines=1,
             placeholder="low quality",
         ),
-        gr.Image(type="pil"),
-        gr.Slider(minimum=0, maximum=100, step=1, default=0, label="Seed (0 for random seed)")
+        gr.Image(),
     ],
     outputs=gr.Gallery().style(grid=[2], height="auto"),
-    title="Generate controlled outputs with Categorical Conditioning on Stable Diffusion 1.5 beta 2.",
+    title="Generate controlled outputs with Categorical Conditioning on Waifu Diffusion 1.5 beta 2.",
     description="This Space uses image examples as style conditioning.",
-    examples=[["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "low quality", "wikipe_cond_1.png"]],
+    examples=[
+        ["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "realistic, real life", "wikipe_cond_1.png"],
+        ["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "realistic, real life", "wikipe_cond_2.png"],
+        ["1girl, green hair, sweater, looking at viewer, upper body, beanie, outdoors, watercolor, night, turtleneck", "realistic, real life", "wikipe_cond_3.png"]
+        ],
     allow_flagging=False,
 ).launch(enable_queue=True)
+
