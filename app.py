@@ -14,6 +14,7 @@ import PIL
 from PIL import Image
 import numpy as np
 import jax
+import os
 
 import torchvision.transforms.functional as F
 
@@ -27,8 +28,8 @@ conditioning_image_transforms = T.Compose(
         #T.Normalize([0.5], [0.5]),
     ]
 )
-
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/CatCon-Controlnet-WD-1-5-b2R", dtype=jnp.bfloat16, from_flax=True)
+api_token = os.getenv("HF_API_TOKEN")
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("Ryukijano/CatCon-Controlnet-WD-1-5-b2R", dtype=jnp.bfloat16, from_flax=True, api_token = os.getenv("HF_API_TOKEN"))
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
         "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax", 
         controlnet=cnet,
