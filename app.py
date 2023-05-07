@@ -28,11 +28,11 @@ conditioning_image_transforms = T.Compose(
         #T.Normalize([0.5], [0.5]),
     ]
 )
-cnet, cnet_params = FlaxControlNetModel.from_pretrained("Cognomen/CatCon-Controlnet-WD-1-5-b2", dtype=jnp.bfloat16, from_flax=True, api_token = os.getenv("HF_API_TOKEN"))
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True, api_token = os.getenv("HF_API_TOKEN"))
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
-        "Cognomen/CatCon-Controlnet-WD-1-5-b2", 
+        "./models/wd-1-5-b2-flax", 
         controlnet=cnet,
-        revision="main",
+        revision="flax",
         dtype=jnp.bfloat16,
         )
 #scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
