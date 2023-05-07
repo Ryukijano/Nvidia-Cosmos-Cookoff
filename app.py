@@ -32,7 +32,7 @@ cnet, cnet_params = FlaxControlNetModel.from_pretrained("Cognomen/CatCon-Control
 pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
         "Cognomen/CatCon-Controlnet-WD-1-5-b2", 
         controlnet=cnet,
-        revision="flax",
+        revision="main",
         dtype=jnp.bfloat16,
         )
 #scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
