@@ -48,7 +48,7 @@ def get_random(seed):
     return jax.random.PRNGKey(seed)
 
 # inference function takes prompt, negative prompt and image
-def infer(prompt, negative_prompt, image):
+def infer(prompt, negative_prompt, image, seed_value):
     # implement your inference function here
     params["controlnet"] = cnet_params
     num_samples = 1
@@ -67,7 +67,12 @@ def infer(prompt, negative_prompt, image):
     n_prompt_in = pipe.prepare_text_inputs([negative_prompt] * num_samples)
     n_prompt_in = shard(n_prompt_in)
 
-    rng = get_random(0)
+    #rng = get_random(0)
+    if seed_value == 100:
+        rng = jax.random.PRNGKey(None)
+    else:
+        rng = get_random(seed_value)
+        
     rng = jax.random.split(rng, jax.device_count())
 
     p_params = replicate(params)
@@ -99,6 +104,7 @@ gr.Interface(
             placeholder="low quality",
         ),
         gr.Image(),
+        gr.Slider(label="Seed value", min_value=-100, max_value=100)
     ],
     outputs=gr.Gallery().style(grid=[2], height="auto"),
     title="Generate controlled outputs with Categorical Conditioning on Waifu Diffusion 1.5 beta 2.",
