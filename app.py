@@ -18,7 +18,7 @@ import os
 
 import torchvision.transforms.functional as F
 
-output_res = (1024,1024)
+output_res = (900,900)
 
 conditioning_image_transforms = T.Compose(
     [
