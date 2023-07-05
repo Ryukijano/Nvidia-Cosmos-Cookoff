@@ -18,7 +18,7 @@ import os
 
 import torchvision.transforms.functional as F
 
-output_res = (768,768)
+output_res = (1024,1024)
 
 conditioning_image_transforms = T.Compose(
     [
@@ -28,12 +28,13 @@ conditioning_image_transforms = T.Compose(
         #T.Normalize([0.5], [0.5]),
     ]
 )
-config = FlaxControlNetModel.load_config("./models/catcon-controlnet-wd")
-cnet, cnet_params = FlaxControlNetModel.from_config(config, dtype=jnp.bfloat16)
-
-config = FlaxStableDiffusionControlNetPipeline.load_config("./models/wd-1-5-b2-flax")
-pipe, params = FlaxStableDiffusionControlNetPipeline.from_config(config, controlnet=cnet, dtype=jnp.bfloat16)
-
+cnet, cnet_params = FlaxControlNetModel.from_pretrained("./models/catcon-controlnet-wd", dtype=jnp.bfloat16, from_flax=True)
+pipe, params = FlaxStableDiffusionControlNetPipeline.from_pretrained(
+        "./models/wd-1-5-b2-flax", 
+        controlnet=cnet,
+        revision="flax",
+        dtype=jnp.bfloat16,
+        )
 #scheduler, scheduler_state = FlaxDPMSolverMultistepScheduler.from_pretrained(
 #    "Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2/wd-1-5-b2-flax",
 #    subfolder="scheduler"
@@ -46,22 +47,19 @@ pipe, params = FlaxStableDiffusionControlNetPipeline.from_config(config, control
 def get_random(seed):
     return jax.random.PRNGKey(seed)
 
-# inference function takes prompt, negative prompt and image(optional with conditional statements)
-def infer(prompt, negative_prompt, image=None):
+# inference function takes prompt, negative prompt and image
+def infer(prompt, negative_prompt, image):
     # implement your inference function here
     params["controlnet"] = cnet_params
     num_samples = 1
 
-    if image is not None:
-        inp = Image.fromarray(image)
-        cond_input = conditioning_image_transforms(inp)
-        cond_input = T.ToPILImage()(cond_input)
-        cond_img_in = pipe.prepare_image_inputs([cond_input] * num_samples)
-        cond_img_in = shard(cond_img_in)
+    inp = Image.fromarray(image)
 
-    else:
-        cond_img_in = None
+    cond_input = conditioning_image_transforms(inp)
+    cond_input = T.ToPILImage()(cond_input)
 
+    cond_img_in = pipe.prepare_image_inputs([cond_input] * num_samples)
+    cond_img_in = shard(cond_img_in)
 
     prompt_in = pipe.prepare_text_inputs([prompt] * num_samples)
     prompt_in = shard(prompt_in)
@@ -103,7 +101,6 @@ gr.Interface(
         gr.Image(),
     ],
     outputs=gr.Gallery().style(grid=[2], height="auto"),
-    theme=gr.themes.Dark,
     title="Generate controlled outputs with Categorical Conditioning on Waifu Diffusion 1.5 beta 2.",
     description="This Space uses image examples as style conditioning. Experimental proof of concept made for the [Huggingface JAX/Diffusers community sprint](https://github.com/huggingface/community-events/tree/main/jax-controlnet-sprint)[Demo available here](https://huggingface.co/spaces/Ryukijano/CatCon-One-Shot-Controlnet-SD-1-5-b2)[My teammate's demo is available here] (https://huggingface.co/spaces/Cognomen/CatCon-Controlnet-WD-1-5-b2) This is a controlnet for the Stable Diffusion checkpoint [Waifu Diffusion 1.5 beta 2](https://huggingface.co/waifu-diffusion/wd-1-5-beta2) which aims to guide image generation by conditioning outputs with patches of images from a common category of the training target examples. The current checkpoint has been trained for approx. 100k steps on a filtered subset of [Danbooru 2021](https://gwern.net/danbooru2021) using artists as the conditioned category with the aim of learning robust style transfer from an image example.Major limitations:- The current checkpoint was trained on 768x768 crops without aspect ratio checkpointing. Loss in coherence for non-square aspect ratios can be expected.- The training dataset is extremely noisy and used without filtering stylistic outliers from within each category, so performance may be less than ideal. A more diverse dataset with a larger variety of styles and categories would likely have better performance.- The Waifu Diffusion base model is a hybrid anime/photography model, and can unpredictably jump between those modalities.- As styling is sensitive to divergences in model checkpoints, the capabilities of this controlnet are not expected to predictably apply to other SD 2.X checkpoints.",
     
@@ -114,4 +111,3 @@ gr.Interface(
         ],
     allow_flagging=False,
 ).launch(enable_queue=True)
-
