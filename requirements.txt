@@ -1,8 +1,0 @@
-transformers
-diffusers
-accelerate
-torch
-ftfy
-modin[all]
-xformers
-invisible_watermark
