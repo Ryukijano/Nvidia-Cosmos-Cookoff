@@ -9,10 +9,7 @@ opencv-python
 torch
 torchvision
 accelerate
-transformers
 diffusers
-accelerate
-torch
 ftfy
 modin[all]
 xformers
