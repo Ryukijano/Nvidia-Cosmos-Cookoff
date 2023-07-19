@@ -1,4 +1,8 @@
+import gradio as gr
 
+gr.Interface.load("models/stabilityai/stable-diffusion-xl-base-0.9").launch()
+
+'''
 import gradio as gr
 import jax.numpy as jnp
 from diffusers import FlaxStableDiffusionControlNetPipeline, FlaxControlNetModel
@@ -112,3 +116,4 @@ gr.Interface(
         ],
     allow_flagging=False,
 ).launch(enable_queue=True)
+'''
