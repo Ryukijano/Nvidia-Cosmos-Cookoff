@@ -9,8 +9,5 @@ opencv-python
 torch
 torchvision
 accelerate
-diffusers
-ftfy
-modin[all]
-xformers
-invisible_watermark
+
+
