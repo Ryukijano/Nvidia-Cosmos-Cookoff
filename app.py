@@ -3,7 +3,7 @@ import gradio as gr
 import jax.numpy as jnp
 from diffusers import FlaxStableDiffusionControlNetPipeline, FlaxControlNetModel
 from diffusers import FlaxScoreSdeVeScheduler, FlaxDPMSolverMultistepScheduler
-from transformers import ClipImageProcessor
+from transformers import CLIPImageProcessor
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 import torchvision
