@@ -1,6 +1,7 @@
 torch==2.0.1
 transformers
 flax
+"jax[cuda12_pip]"
 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 jaxlib
 opencv-python
@@ -11,4 +12,4 @@ einops
 torch
 torchvision
 accelerate
---upgrade gradio
+gradio
