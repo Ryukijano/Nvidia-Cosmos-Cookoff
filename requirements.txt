@@ -1,6 +1,16 @@
 torch==2.0.1
-opencv-python
 transformers
-diffusers
+flax
+--upgrade "jax[cuda12_pip]"
+-f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+jaxlib
+opencv-python
+git+https://github.com/huggingface/diffusers@main
+transformers
 openai
 einops
+upgrade --gradio
+torch
+torchvision
+accelerate
+gradio --upgrade
