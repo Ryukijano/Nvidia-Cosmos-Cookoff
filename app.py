@@ -1,347 +1,411 @@
+import os
 import torch
-import torch.nn as nn
-import yaml
-import cv2
-import numpy as np
-from PIL import Image
+import fire
 import gradio as gr
+from PIL import Image
 from functools import partial
-import lib.Equirec2Perspec as E2P
-import lib.Perspec2Equirec as P2E
-import lib.multi_Perspec2Equirec as m_P2E
-import openai
-from model import Model
+import spaces 
+import cv2
+import time
+import numpy as np
+from rembg import remove
+from segment_anything import sam_model_registry, SamPredictor
 
-def get_K_R(FOV, THETA, PHI, height, width):
-    f = 0.5 * width * 1 / np.tan(0.5 * FOV / 180.0 * np.pi)
-    cx = (width - 1) / 2.0
-    cy = (height - 1) / 2.0
-    K = np.array([
-        [f, 0, cx],
-        [0, f, cy],
-        [0, 0,  1],
-    ], np.float32)
+import os
+import torch
 
-    y_axis = np.array([0.0, 1.0, 0.0], np.float32)
-    x_axis = np.array([1.0, 0.0, 0.0], np.float32)
-    R1, _ = cv2.Rodrigues(y_axis * np.radians(THETA))
-    R2, _ = cv2.Rodrigues(np.dot(R1, x_axis) * np.radians(PHI))
-    R = R2 @ R1
-    return K, R
-
-
-if __name__=='__main__':
-    cfg_path='configs/train_mv.yaml'
-    config = yaml.load(open(cfg_path, 'rb'), Loader=yaml.SafeLoader)
-    config['height']=512
-    config['width']=512
-    config['length']=8
-    config['model_path']='weights/last.ckpt'
-
-    demo_model=Model(config)
-    state_dict=torch.load(config['model_path'])['state_dict']
-    demo_model.load_state_dict(state_dict, strict=False)
-    demo_model=demo_model.cuda()
-
-    batch=torch.load('batch.pth')
+from PIL import Image
+from typing import Dict, Optional,  List
+from dataclasses import dataclass
+from mvdiffusion.data.single_image_dataset import SingleImageDataset 
+from mvdiffusion.pipelines.pipeline_mvdiffusion_unclip import StableUnCLIPImg2ImgPipeline
+from einops import rearrange
+import numpy as np
+import subprocess
+from datetime import datetime
+from icecream import ic
+def save_image(tensor):
+    ndarr = tensor.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to("cpu", torch.uint8).numpy()
+    # pdb.set_trace()
+    im = Image.fromarray(ndarr)
+    return ndarr
 
 
-    example1=[
-        "A room with a sofa and coffee table for relaxing.",
-        "A corner sofa is surrounded by plants.",
-        "A comfy sofa, bookshelf, and lamp for reading.",
-        "A bright room with a sofa, TV, and games.",
-        "A stylish sofa and desk setup for work.",
-        "A sofa, dining table, and chairs for gatherings.",
-        "A colorful sofa, art, and music fill the room.",
-        "A sofa, yoga mat, and meditation corner for calm."
-    ]
-    example2=[
-        "A room with a sofa and coffee table for relaxing, cartoon style",
-        "A corner sofa is surrounded by plants, cartoon style",
-        "A comfy sofa, bookshelf, and lamp for reading, cartoon style",
-        "A bright room with a sofa, TV, and games, cartoon style",
-        "A stylish sofa and desk setup for work, cartoon style",
-        "A sofa, dining table, and chairs for gatherings, cartoon style",
-        "A colorful sofa, art, and music fill the room, cartoon style",
-        "A sofa, yoga mat, and meditation corner for calm, cartoon style"
-    ]
-
-    example3=[
-        "A room with a sofa and coffee table for relaxing, oil painting style",
-        "A corner sofa is surrounded by plants, oil painting style",
-        "A comfy sofa, bookshelf, and lamp for reading, oil painting style",
-        "A bright room with a sofa, TV, and games, oil painting style",
-        "A stylish sofa and desk setup for work, oil painting style",
-        "A sofa, dining table, and chairs for gatherings, oil painting style",
-        "A colorful sofa, art, and music fill the room, oil painting style",
-        "A sofa, yoga mat, and meditation corner for calm, oil painting style"
-    ]
-
-    example4=[
-        "A Japanese room with muted-colored tatami mats.",
-        "A Japanese room with a simple, folded futon sits to one side.",
-        "A Japanese room with a low table rests in the room's center.",
-        "A Japanese room with Shoji screens divide the room softly.",
-        "A Japanese room with An alcove holds an elegant scroll and flowers.",
-        "A Japanese room with a tea set rests on a bamboo tray.",
-        "A Japanese room with a carved wooden cupboard stands against a wall.",
-        "A Japanese room with a traditional lamp gently lights the room."
-    ]
-    example6=[
-        'This kitchen is a charming blend of rustic and modern, featuring a large reclaimed wood island with marble countertop',
-        'This kitchen is a charming blend of rustic and modern, featuring a large reclaimed wood island with marble countertop',
-        'This kitchen is a charming blend of rustic and modern, featuring a large reclaimed wood island with marble countertop',
-        'To the left of the island, a stainless-steel refrigerator stands tall. ',
-        'To the left of the island, a stainless-steel refrigerator stands tall. ',
-        'a sink surrounded by cabinets',
-        'a sink surrounded by cabinets',
-        'To the right of the sink, built-in wooden cabinets painted in a muted.'
-    ]
-
-    example7= [
-        "Cobblestone streets curl between old buildings.",
-        "Shops and cafes display signs and emit pleasant smells.",
-        "A fruit market scents the air with fresh citrus.",
-        "A fountain adds calm to one side of the scene.",
-        "Bicycles rest against walls and posts.",
-        "Flowers in boxes color the windows.",
-        "Flowers in boxes color the windows.",
-        "Cobblestone streets curl between old buildings."
-    ]
-
-    example8=[
-        "The patio is open and airy.",
-        "A table and chairs sit in the middle.",
-        "Next the table is flowers.",
-        "Colorful flowers fill the planters.",
-        "A grill stands ready for barbecues.",
-        "A grill stands ready for barbecues.",
-        "The patio overlooks a lush garden.",
-        "The patio overlooks a lush garden."
-    ]
-
-    example9=[
-        "A Chinese palace with roofs curve.",
-        "A Chinese palace, Red and gold accents gleam in the sun.",
-        "A Chinese palace with a view of mountain in the front.",
-        "A view of mountain in the front.",
-        "A Chinese palace with a view of mountain in the front.",
-        "A Chinese palace with a tree beside.",
-        "A Chinese palace with a tree beside.",
-        "A Chinese palace, with a tree beside."
-    ]
+def save_image_to_disk(tensor, fp):
+    ndarr = tensor.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to("cpu", torch.uint8).numpy()
+    # pdb.set_trace()
+    im = Image.fromarray(ndarr)
+    im.save(fp)
+    return ndarr
 
 
-
-    example_b1="This kitchen is a charming blend of rustic and modern, featuring a large reclaimed wood island with marble countertop, a sink surrounded by cabinets. To the left of the island, a stainless-steel refrigerator stands tall. To the right of the sink, built-in wooden cabinets painted in a muted."
-    example_b2="Bursting with vibrant hues and exaggerated proportions, the cartoon-styled room sparkled with whimsy and cheer, with floating shelves crammed with oddly shaped trinkets, a comically oversized polka-dot armchair perched near a gravity-defying, tilted lamp, and the candy-striped wallpaper creating a playful backdrop to the merry chaos, exuding a sense of fun and boundless imagination."
-    example_b3="Bathed in the pulsating glow of neon lights that painted stark contrasts of shadow and color, the cyberpunk room was a high-tech, low-life sanctuary, where sleek, metallic surfaces met jagged, improvised tech; a wall of glitchy monitors flickered with unending streams of data, and the buzz of electric current and the low hum of cooling fans formed a dystopian symphony, adding to the room's relentless, gritty energy."
-    example_b4="Majestically rising towards the heavens, the snow-capped mountain stood, its jagged peaks cloaked in a shroud of ethereal clouds, its rugged slopes a stark contrast against the serene azure sky, and its silent grandeur exuding an air of ancient wisdom and timeless solitude, commanding awe and reverence from all who beheld it."
-    example_b5='Bathed in the soft, dappled light of the setting sun, the silent street lay undisturbed, revealing the grandeur of its cobblestone texture, the rusted lampposts bearing witness to forgotten stories, and the ancient, ivy-clad houses standing stoically, their shuttered windows and weather-beaten doors speaking volumes about their passage through time.'
-    example_b6='Awash with the soothing hues of an array of blossoms, the tranquil garden was a symphony of life and color, where the soft murmur of the babbling brook intertwined with the whispering willows, and the iridescent petals danced in the gentle breeze, creating an enchanting sanctuary of beauty and serenity.'
-    example_b7="Canopied by a patchwork quilt of sunlight and shadows, the sprawling park was a panorama of lush green grass, meandering trails etched through vibrant wildflowers, towering oaks reaching towards the sky, and tranquil ponds mirroring the clear, blue expanse above, offering a serene retreat in the heart of nature's splendor."
-
-    examples_basic=[example_b1, example_b2, example_b3, example_b4, example_b5, example_b6]
-    examples_advanced=[example1, example2, example3, example4, example6, example7, example8, example9]
-
-    description="The demo generates 8 perspective images, with FOV of 90 and rotation angle of 45. Please type 8 sentences corresponding to each perspective image."
-
-    outputs=[gr.Image(shape=(484, 2048))]
-    outputs.extend([gr.Image(shape=(1, 1)) for i in range(8)])
-
-    def load_example_img(path):
-        img=Image.open(path)
-        img.resize((1024, 242))
-        return img
-
-    def copy(text):
-        return [text]*8
-
-    def clear():
-        return None, None, None, None, None, None, None, None, None
-
-    def load_basic(example):
-        return example
-
-    def generate_advanced(acc, text1, text2, text3, text4, text5, text6, text7, text8):
-        texts=[text1, text2, text3, text4, text5, text6, text7, text8]
-        for text in texts:
-            if text is None or text=='':
-                raise gr.Error('Text cannot be empty')
-        images_low_res_pred=demo_model(texts, batch)[0]
-        imgs=[]
-        degrees = [[90, 0, 0],[90, 45, 0],[90, 90, 0],[90, 135, 0],[90, 180, 0],[90, 225, 0],[90, 270, 0],[90, 315, 0]]
-        width = 2048
-        height = 1024
-        for i in range(8):
-            imgs.append(images_low_res_pred[i])
-        equ = m_P2E.Perspective(imgs,
-                                degrees)    
+def save_image_numpy(ndarr, fp):
+    im = Image.fromarray(ndarr)
+    im.save(fp)
 
 
-        img = equ.GetEquirec(height,width).astype(np.uint8)
-        img=img[270:-270]
-        imgs=[img]+imgs
-        return [acc.update(open=False)]+imgs
+weight_dtype = torch.float16
 
-    def generate_basic(acc, text):
-        print(text)
-        if text is None or text=='':
-            raise gr.Error('Text cannot be empty')
-        model='gpt-4o-mini'
-        openai.api_key = "sk-REDACTED"
-
-        # Start sending prompts
-        flag=False
-        for i in range(20):
-            try:
-                response = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[
-                        {"role": "user", "content": "Can you describe the following with 5 or 6 sentences? {}".format(text)}],
-                    max_tokens=193,
-                    temperature=0,
-                )
-                text=response.choices[0]['message']['content']
-                flag=True
-                break
-            except:
-                flag=False
-        if not flag:
-            raise gr.Error('Text error')
-
-        texts=[text]*8
-        if text=='':
-            raise gr.Error('Text cannot be empty')
-        images_low_res_pred=demo_model(texts, batch)[0]
-        imgs=[]
-        degrees = [[90, 0, 0],[90, 45, 0],[90, 90, 0],[90, 135, 0],[90, 180, 0],[90, 225, 0],[90, 270, 0],[90, 315, 0]]
-        width = 2048
-        height = 1024
-        for i in range(8):
-            imgs.append(images_low_res_pred[i])
-        equ = m_P2E.Perspective(imgs,
-                                degrees)    
+_TITLE = '''Era3D: High-Resolution Multiview Diffusion using Efficient Row-wise Attention'''
+_DESCRIPTION = '''
+<div>
+Generate consistent high-resolution multi-view normals maps and color images.
+</div>
+<div>
+The demo does not include the mesh reconstruction part, please visit <a href="https://github.com/pengHTYX/Era3D"><img src='https://img.shields.io/github/stars/pengHTYX/Era3D?style=social' style="display: inline-block; vertical-align: middle;"/></a> to get a textured mesh.
+</div>
+'''
+_GPU_ID = 0
 
 
-        img = equ.GetEquirec(height,width).astype(np.uint8)
-        img=img[270:-270]
-        imgs=[img]+imgs
-        return [acc.update(open=False)]+imgs
+if not hasattr(Image, 'Resampling'):
+    Image.Resampling = Image
 
-    default_text='This kitchen is a charming blend of rustic and modern, featuring a large reclaimed wood island with marble countertop, a sink surrounded by cabinets. To the left of the island, a stainless-steel refrigerator stands tall. To the right of the sink, built-in wooden cabinets painted in a muted.'
-    css = """
-    #warning {background-color: #000000} 
-    .feedback textarea {font-size: 16px !important}
-    #foo {}
-    .text111 textarea {
-        color: rgba(0, 0, 0, 0.5);
-    }
-    """
 
-    inputs=[gr.Textbox(type="text", label='Text{}'.format(i)) for i in range(8)]
+def sam_init():
+    sam_checkpoint = os.path.join(os.path.dirname(__file__), "sam_pt", "sam_vit_h_4b8939.pth")
+    model_type = "vit_h"
 
-    with gr.Blocks(css=css) as demo:
-        with gr.Row():
-            gr.Markdown(
-            """
-            # <center>Text2Pano with MVDiffusion</center>
-            """)
-        with gr.Row():
-            gr.Markdown(
-            """
-            <center>Text2Pano demonstration: Write a scene you want in Text, then click "Generate panorama". Alternatively, you can load the example text prompts below to populate text-boxes. The advanced mode allows to specify text prompts for each perspective image</center>
-            """)
-        with gr.Tab("Basic"):
-            with gr.Row():
-                textbox1=gr.Textbox(type="text", label='Text', value=default_text, elem_id='warning', elem_classes="feedback")
+    sam = sam_model_registry[model_type](checkpoint=sam_checkpoint).to(device=f"cuda:{_GPU_ID}")
+    predictor = SamPredictor(sam)
+    return predictor
 
-            with gr.Row():
-                submit_btn = gr.Button("Generate panorama")
-                clear_btn = gr.Button("Clear all texts")
-                clear_btn.click(
-                    clear,
-                    outputs=inputs+[textbox1]
-                )
+@spaces.GPU
+def sam_segment(predictor, input_image, *bbox_coords):
+    bbox = np.array(bbox_coords)
+    image = np.asarray(input_image)
 
-            with gr.Accordion("Example expand/hide") as acc:
-                for i in range(0, len(examples_basic)):
-                    with gr.Row():
-                        gr.Image(load_example_img('assets/basic/img{}.png'.format(i+1)), label='example {}'.format(i+1))
-                        #gr.Image('demo/assets/basic/img{}.png'.format(i+2), label='example {}'.format(i+2))
-                    with gr.Row():
-                        gr.Textbox(type="text", label='Example text {}'.format(i+1), value=examples_basic[i])
-                        #gr.Textbox(type="text", label='Example text {}'.format(i+2), value=examples_basic[i+1])
-                    with gr.Row():
-                        load_btn=gr.Button("Load text to the main box")
-                        load_btn.click(
-                            partial(load_basic, examples_basic[i]),
-                            outputs=[textbox1]
-                        )
-            
-                submit_btn.click(
-                    partial(generate_basic, acc),
-                    inputs=textbox1,
-                    outputs=[acc]+outputs
-                )
-                
-        with gr.Tab("Advanced"):
-            with gr.Row():
-                for text_bar in inputs[:4]:
-                    text_bar.render()
-            with gr.Row():
-                for text_bar in inputs[4:]:
-                    text_bar.render()
-            
-            with gr.Row():
+    start_time = time.time()
+    predictor.set_image(image)
 
-                submit_btn = gr.Button("Generate panorama")
-                clear_btn = gr.Button("Clear all texts")
-                clear_btn.click(
-                    clear,
-                    outputs=inputs+[textbox1]
-                )
-            with gr.Accordion("Example expand/hide") as acc_advanced:
-                for i, example in enumerate(examples_advanced):
-                    with gr.Row():
-                        gr.Image(load_example_img('assets/advanced/img{}.png'.format(i+1)), label='example {}'.format(i+1))
-                    with gr.Row():
-                        gr.Textbox(type="text", label='Text 1', value=example[0])
-                        gr.Textbox(type="text", label='Text 2', value=example[1])
-                        gr.Textbox(type="text", label='Text 3', value=example[2])
-                        gr.Textbox(type="text", label='Text 4', value=example[3])
-                    with gr.Row():
-                        gr.Textbox(type="text", label='Text 4', value=example[4])
-                        gr.Textbox(type="text", label='Text 5', value=example[5])
-                        gr.Textbox(type="text", label='Text 6', value=example[6])
-                        gr.Textbox(type="text", label='Text 7', value=example[7])
-                    with gr.Row():
-                        load_btn=gr.Button("Load text to other text boxes")
-                        load_btn.click(
-                            partial(load_basic, example),
-                            outputs=inputs
-                        )
-                submit_btn.click(
-                    partial(generate_advanced, acc_advanced),
-                    inputs=inputs,
-                    outputs=[acc_advanced]+outputs
-                )
+    masks_bbox, scores_bbox, logits_bbox = predictor.predict(box=bbox, multimask_output=True)
 
-        with gr.Row():
-            outputs[0].render()
-        with gr.Row():
-            outputs[1].render()
-            outputs[2].render()
-        with gr.Row():
-            outputs[3].render()
-            outputs[4].render()
-        with gr.Row():
-            outputs[5].render()
-            outputs[6].render()
-        with gr.Row():
-            outputs[7].render()
-            outputs[8].render()
+    print(f"SAM Time: {time.time() - start_time:.3f}s")
+    out_image = np.zeros((image.shape[0], image.shape[1], 4), dtype=np.uint8)
+    out_image[:, :, :3] = image
+    out_image_bbox = out_image.copy()
+    out_image_bbox[:, :, 3] = masks_bbox[-1].astype(np.uint8) * 255
+    torch.cuda.empty_cache()
+    return Image.fromarray(out_image_bbox, mode='RGBA')
+
+
+def expand2square(pil_img, background_color):
+    width, height = pil_img.size
+    if width == height:
+        return pil_img
+    elif width > height:
+        result = Image.new(pil_img.mode, (width, width), background_color)
+        result.paste(pil_img, (0, (width - height) // 2))
+        return result
+    else:
+        result = Image.new(pil_img.mode, (height, height), background_color)
+        result.paste(pil_img, ((height - width) // 2, 0))
+        return result
+
+
+def preprocess(predictor, input_image, chk_group=None, segment=True, rescale=False):
+    RES = 1024
+    input_image.thumbnail([RES, RES], Image.Resampling.LANCZOS)
+    if chk_group is not None:
+        segment = "Background Removal" in chk_group
+        rescale = "Rescale" in chk_group
+    if segment:
+        image_rem = input_image.convert('RGBA')
+        image_nobg = remove(image_rem, alpha_matting=True)
+        arr = np.asarray(image_nobg)[:, :, -1]
+        x_nonzero = np.nonzero(arr.sum(axis=0))
+        y_nonzero = np.nonzero(arr.sum(axis=1))
+        x_min = int(x_nonzero[0].min())
+        y_min = int(y_nonzero[0].min())
+        x_max = int(x_nonzero[0].max())
+        y_max = int(y_nonzero[0].max())
+        input_image = sam_segment(predictor, input_image.convert('RGB'), x_min, y_min, x_max, y_max)
+    # Rescale and recenter
+    if rescale:
+        image_arr = np.array(input_image)
+        in_w, in_h = image_arr.shape[:2]
+        out_res = min(RES, max(in_w, in_h))
+        ret, mask = cv2.threshold(np.array(input_image.split()[-1]), 0, 255, cv2.THRESH_BINARY)
+        x, y, w, h = cv2.boundingRect(mask)
+        max_size = max(w, h)
+        ratio = 0.75
+        side_len = int(max_size / ratio)
+        padded_image = np.zeros((side_len, side_len, 4), dtype=np.uint8)
+        center = side_len // 2
+        padded_image[center - h // 2 : center - h // 2 + h, center - w // 2 : center - w // 2 + w] = image_arr[y : y + h, x : x + w]
+        rgba = Image.fromarray(padded_image).resize((out_res, out_res), Image.LANCZOS)
+
+        rgba_arr = np.array(rgba) / 255.0
+        rgb = rgba_arr[..., :3] * rgba_arr[..., -1:] + (1 - rgba_arr[..., -1:])
+        input_image = Image.fromarray((rgb * 255).astype(np.uint8))
+    else:
+        input_image = expand2square(input_image, (127, 127, 127, 0))
+    return input_image, input_image.resize((320, 320), Image.Resampling.LANCZOS)
+
+def load_era3d_pipeline(cfg):
+    # Load scheduler, tokenizer and models.
+    
+    pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(
+        cfg.pretrained_model_name_or_path,
+        torch_dtype=weight_dtype
+    )
+    # sys.main_lock = threading.Lock()
+    return pipeline
+
+
+from mvdiffusion.data.single_image_dataset import SingleImageDataset
+
+
+def prepare_data(single_image, crop_size, cfg):
+    dataset = SingleImageDataset(root_dir='', num_views=6, img_wh=[512, 512], bg_color='white', 
+        crop_size=crop_size, single_image=single_image, prompt_embeds_path=cfg.validation_dataset.prompt_embeds_path)
+    return dataset[0]
+
+scene = 'scene'
+def run_pipeline(pipeline, cfg, single_image, guidance_scale, steps, seed, crop_size, chk_group=None):
+    pipeline.to(device=f'cuda:{_GPU_ID}')
+    pipeline.unet.enable_xformers_memory_efficient_attention()
+    
+    global scene
+    # pdb.set_trace()
+
+    if chk_group is not None:
+        write_image = "Write Results" in chk_group
+
+    batch = prepare_data(single_image, crop_size, cfg)
+
+    pipeline.set_progress_bar_config(disable=True)
+    seed = int(seed)
+    generator = torch.Generator(device=pipeline.unet.device).manual_seed(seed)
+
+
+    imgs_in = torch.cat([batch['imgs_in']]*2, dim=0)
+    num_views = imgs_in.shape[1]
+    imgs_in = rearrange(imgs_in, "B Nv C H W -> (B Nv) C H W")# (B*Nv, 3, H, W)
+    
+    normal_prompt_embeddings, clr_prompt_embeddings = batch['normal_prompt_embeddings'], batch['color_prompt_embeddings'] 
+    prompt_embeddings = torch.cat([normal_prompt_embeddings, clr_prompt_embeddings], dim=0)
+    prompt_embeddings = rearrange(prompt_embeddings, "B Nv N C -> (B Nv) N C")
+    
+    
+    imgs_in = imgs_in.to(device=f'cuda:{_GPU_ID}', dtype=weight_dtype)
+    prompt_embeddings = prompt_embeddings.to(device=f'cuda:{_GPU_ID}', dtype=weight_dtype)
+    
+    out = pipeline(
+        imgs_in, 
+        None, 
+        prompt_embeds=prompt_embeddings,
+        generator=generator, 
+        guidance_scale=guidance_scale, 
+        output_type='pt', 
+        num_images_per_prompt=1, 
+        # return_elevation_focal=cfg.log_elevation_focal_length,
+        **cfg.pipe_validation_kwargs
+    ).images
+
+    bsz = out.shape[0] // 2
+    normals_pred = out[:bsz]
+    images_pred = out[bsz:]
+    num_views = 6
+    if write_image:
+        VIEWS = ['front', 'front_right', 'right', 'back', 'left', 'front_left']
+        cur_dir = os.path.join(cfg.save_dir, f"cropsize-{int(crop_size)}-cfg{guidance_scale:.1f}")
         
-    demo.queue(concurrency_count=3)
-    demo.launch(share=True)
+        scene = 'scene'+datetime.now().strftime('@%Y%m%d-%H%M%S')
+        scene_dir = os.path.join(cur_dir, scene)
+        os.makedirs(scene_dir, exist_ok=True)
+
+        for j in range(num_views):
+            view = VIEWS[j]
+            normal = normals_pred[j]
+            color = images_pred[j]
+
+            normal_filename = f"normals_{view}_masked.png"
+            color_filename = f"color_{view}_masked.png"
+            normal = save_image_to_disk(normal, os.path.join(scene_dir, normal_filename))
+            color = save_image_to_disk(color, os.path.join(scene_dir, color_filename))
+
+
+    normals_pred = [save_image(normals_pred[i]) for i in range(bsz)]
+    images_pred = [save_image(images_pred[i]) for i in range(bsz)]
+    
+    out = images_pred + normals_pred
+    return images_pred, normals_pred
+
+
+def process_3d(mode, data_dir, guidance_scale, crop_size):
+    dir = None
+    global scene
+
+    cur_dir = os.path.dirname(os.path.abspath(__file__))
+
+    subprocess.run(
+        f'cd instant-nsr-pl && bash run.sh 0 {scene} exp_demo && cd ..',
+        shell=True,
+    )
+    import glob
+
+    obj_files = glob.glob(f'{cur_dir}/instant-nsr-pl/exp_demo/{scene}/*/save/*.obj', recursive=True)
+    print(obj_files)
+    if obj_files:
+        dir = obj_files[0]
+    return dir
+
+
+@dataclass
+class TestConfig:
+    pretrained_model_name_or_path: str
+    pretrained_unet_path:Optional[str]
+    revision: Optional[str]
+    validation_dataset: Dict
+    save_dir: str
+    seed: Optional[int]
+    validation_batch_size: int
+    dataloader_num_workers: int
+    # save_single_views: bool
+    save_mode: str
+    local_rank: int
+
+    pipe_kwargs: Dict
+    pipe_validation_kwargs: Dict
+    unet_from_pretrained_kwargs: Dict
+    validation_guidance_scales: List[float]
+    validation_grid_nrow: int
+    camera_embedding_lr_mult: float
+
+    num_views: int
+    camera_embedding_type: str
+
+    pred_type: str  # joint, or ablation
+    regress_elevation: bool
+    enable_xformers_memory_efficient_attention: bool
+
+    cond_on_normals: bool
+    cond_on_colors: bool
+    
+    regress_elevation: bool
+    regress_focal_length: bool
+    
+
+
+def run_demo():
+    from utils.misc import load_config
+    from omegaconf import OmegaConf
+
+    # parse YAML config to OmegaConf
+    cfg = load_config("./configs/test_unclip-512-6view.yaml")
+    # print(cfg)
+    schema = OmegaConf.structured(TestConfig)
+    cfg = OmegaConf.merge(schema, cfg)
+
+    pipeline = load_era3d_pipeline(cfg)
+    torch.set_grad_enabled(False)
+
+    
+    predictor = sam_init()
+
+
+    custom_theme = gr.themes.Soft(primary_hue="blue").set(
+        button_secondary_background_fill="*neutral_100", button_secondary_background_fill_hover="*neutral_200"
+    )
+    custom_css = '''#disp_image {
+        text-align: center; /* Horizontally center the content */
+    }'''
+    
+
+    with gr.Blocks(title=_TITLE, theme=custom_theme, css=custom_css) as demo:
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown('# ' + _TITLE)
+        gr.Markdown(_DESCRIPTION)
+        with gr.Row(variant='panel'):
+            with gr.Column(scale=1):
+                input_image = gr.Image(type='pil', image_mode='RGBA', height=320, label='Input image')
+
+            with gr.Column(scale=1):
+                processed_image_highres = gr.Image(type='pil', image_mode='RGBA', visible=False)
+               
+                processed_image = gr.Image(
+                    type='pil',
+                    label="Processed Image",
+                    interactive=False,
+                    # height=320,
+                    image_mode='RGBA',
+                    elem_id="disp_image",
+                    visible=True,
+                )
+            # with gr.Column(scale=1):
+            #     ## add 3D Model
+            #     obj_3d = gr.Model3D(
+            #                         # clear_color=[0.0, 0.0, 0.0, 0.0], 
+            #                         label="3D Model", height=320, 
+            #                         # camera_position=[0,0,2.0]
+            #                         )
+                
+        with gr.Row(variant='panel'):
+            with gr.Column(scale=1):
+                example_folder = os.path.join(os.path.dirname(__file__), "./examples")
+                example_fns = [os.path.join(example_folder, example) for example in os.listdir(example_folder)]
+                gr.Examples(
+                    examples=example_fns,
+                    inputs=[input_image],
+                    outputs=[input_image],
+                    cache_examples=False,
+                    label='Examples (click one of the images below to start)',
+                    examples_per_page=30,
+                )
+            with gr.Column(scale=1):
+                with gr.Row():
+                    with gr.Column():
+                        with gr.Accordion('Advanced options', open=True):
+                            input_processing = gr.CheckboxGroup(
+                                ['Background Removal'],
+                                label='Input Image Preprocessing',
+                                value=['Background Removal'],
+                                info='untick this, if masked image with alpha channel',
+                            )
+                    with gr.Column():
+                        with gr.Accordion('Advanced options', open=False):
+                            output_processing = gr.CheckboxGroup(
+                                ['Write Results'], label='write the results in mv_res folder', value=['Write Results']
+                            )
+                    with gr.Row():
+                        with gr.Column():
+                            scale_slider = gr.Slider(1, 5, value=3, step=1, label='Classifier Free Guidance Scale')
+                        with gr.Column():
+                            steps_slider = gr.Slider(15, 100, value=40, step=1, label='Number of Diffusion Inference Steps')
+                    with gr.Row():
+                        with gr.Column():
+                            seed = gr.Number(600, label='Seed', info='100 for digital portraits')
+                        with gr.Column():
+                            crop_size = gr.Number(420, label='Crop size', info='380 for digital portraits')
+
+                        mode = gr.Textbox('train', visible=False)
+                        data_dir = gr.Textbox('outputs', visible=False)
+                    # with gr.Row():
+                    #     method = gr.Radio(choices=['instant-nsr-pl', 'NeuS'], label='Method (Default: instant-nsr-pl)', value='instant-nsr-pl')
+                run_btn = gr.Button('Generate Normals and Colors', variant='primary', interactive=True)
+                # recon_btn = gr.Button('Reconstruct 3D model', variant='primary', interactive=True)
+                # gr.Markdown("<span style='color:red'>First click Generate button, then click Reconstruct button. Reconstruction may cost several minutes.</span>")
+        
+        with gr.Row():
+            view_gallery = gr.Gallery(label='Multiview Images')
+            normal_gallery = gr.Gallery(label='Multiview Normals')
+            
+        print('Launching...')
+        run_btn.click(
+            fn=partial(preprocess, predictor), inputs=[input_image, input_processing], outputs=[processed_image_highres, processed_image], queue=True
+        ).success(
+            fn=partial(run_pipeline, pipeline, cfg),
+            inputs=[processed_image_highres, scale_slider, steps_slider, seed, crop_size, output_processing],
+            outputs=[view_gallery, normal_gallery],
+        )
+        # recon_btn.click(
+        #     process_3d, inputs=[mode, data_dir, scale_slider, crop_size], outputs=[obj_3d]
+        # )
+
+        demo.queue().launch(share=True, max_threads=80)
+        
+
+if __name__ == '__main__':
+    fire.Fire(run_demo)
