@@ -12,4 +12,4 @@ einops
 torch
 torchvision
 accelerate
-gradio --U
+gradio -U
