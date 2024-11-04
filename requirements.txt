@@ -12,5 +12,4 @@ torch
 torchvision
 accelerate
 gradio
-src
 numpy<2
