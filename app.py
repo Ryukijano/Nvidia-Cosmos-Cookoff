@@ -189,7 +189,7 @@ if __name__=='__main__':
         print(text)
         if text is None or text=='':
             raise gr.Error('Text cannot be empty')
-        model='gpt-3.5-turbo'
+        model='gpt-4o-mini'
         openai.api_key = "sk-REDACTED"
 
         # Start sending prompts
