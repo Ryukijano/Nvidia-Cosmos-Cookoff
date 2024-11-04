@@ -11,4 +11,4 @@ einops
 torch
 torchvision
 accelerate
-gradio==4.44.1
+gradio
