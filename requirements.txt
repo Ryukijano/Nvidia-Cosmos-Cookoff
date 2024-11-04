@@ -11,4 +11,4 @@ einops
 torch
 torchvision
 accelerate
-gradio -U
+--upgrade gradio
