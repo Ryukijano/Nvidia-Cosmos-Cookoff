@@ -1,14 +1,20 @@
-# Start from a Python 3.10 image
-FROM python:3.10
+# Install pyenv dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    make build-essential libssl-dev zlib1g-dev \
+    libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
+    libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev \
+    python3-openssl git
 
-# Set environment variables for pyenv if needed
-ENV PYENV_ROOT="/root/.pyenv" \
-    PATH="/root/.pyenv/bin:/root/.pyenv/shims:/root/.pyenv/versions/3.10.0/bin:$PATH"
+# Install pyenv
+RUN curl https://pyenv.run | bash
 
-# Copy all project files into the container
-COPY . /workspace
-WORKDIR /workspace
+# Set pyenv environment variables
+ENV PYENV_ROOT="$HOME/.pyenv"
+ENV PATH="$PYENV_ROOT/bin:$PATH"
 
-# Install dependencies
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+# Install Python 3.10 using pyenv
+RUN pyenv install 3.10.0 && \
+    pyenv global 3.10.0
+
+# Rehash pyenv to apply changes
+RUN pyenv rehash
