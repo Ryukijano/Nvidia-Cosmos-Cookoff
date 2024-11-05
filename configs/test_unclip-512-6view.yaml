@@ -1,4 +1,4 @@
-pretrained_model_name_or_path: './MacLab-Era3D-512-6view'
+pretrained_model_name_or_path: 'pengHTYX/MacLab-Era3D-512-6view'
 revision: null
 
 num_views: 6
