@@ -7,6 +7,7 @@ import os
 from transformers import GemmaTokenizer, AutoModelForCausalLM
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 from threading import Thread
+import torch
 
 # Set an environment variable
 HF_TOKEN = os.environ.get("HF_TOKEN", None)
@@ -57,7 +58,7 @@ h1 {
 # Load the tokenizer and model
 model_path = "Zhengyi/LLaMA-Mesh"
 tokenizer = AutoTokenizer.from_pretrained(model_path)
-model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto")
+model = AutoModelForCausalLM.from_pretrained(model_path, device_map="cuda:0", torch_dtype=torch.float16).to('cuda')
 terminators = [
     tokenizer.eos_token_id,
     tokenizer.convert_tokens_to_ids("<|eot_id|>")
