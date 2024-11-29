@@ -1,6 +1,9 @@
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import gradio as gr
 import os
-import spaces
+# import spaces
 from transformers import GemmaTokenizer, AutoModelForCausalLM
 from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
 from threading import Thread
@@ -16,8 +19,8 @@ DESCRIPTION = '''
 <a style="display:inline-block" href="https://research.nvidia.com/labs/toronto-ai/LLaMA-Mesh/"><img src='https://img.shields.io/badge/public_website-8A2BE2'></a>
 <a style="display:inline-block; margin-left: .5em" href="https://github.com/nv-tlabs/LLaMA-Mesh"><img src='https://img.shields.io/github/stars/nv-tlabs/LLaMA-Mesh?style=social'/></a>
 </div>
-<p>LLaMA-Mesh: Unifying 3D Mesh Generation with Language Models.<a style="display:inline-block" href="https://research.nvidia.com/labs/toronto-ai/LLaMA-Mesh/">[Project Page]</a> <a style="display:inline-block" href="https://github.com/nv-tlabs/LLaMA-Mesh">[Code]</a></p>
-<p> Notice: (1) This demo supports up to 4096 tokens due to computational limits, while our full model supports 8k tokens. This limitation may result in incomplete generated meshes. To experience the full 8k token context, please run our model locally.</p>
+<p>LLaMA-Mesh: Unifying 3D Mesh Generation with Language Models. <a style="display:inline-block" href="https://research.nvidia.com/labs/toronto-ai/LLaMA-Mesh/">[Project Page]</a> <a style="display:inline-block" href="https://github.com/nv-tlabs/LLaMA-Mesh">[Code]</a></p>
+<p> Notice: (1) The default token length is 4096. If you observe incomplete generated meshes, try to increase the maximum token length into 8192.</p>
 <p>(2) We only support generating a single mesh per dialog round. To generate another mesh, click the "clear" button and start a new dialog.</p>
 <p>(3) If the LLM refuses to generate a 3D mesh, try adding more explicit instructions to the prompt, such as "create a 3D model of a table <strong>in OBJ format</strong>." A more effective approach is to request the mesh generation at the start of the dialog.</p>
 </div>
@@ -75,7 +78,7 @@ def apply_gradient_color(mesh_text):
         str: Path to the GLB file with gradient colors applied.
     """
     # Load the mesh
-    temp_file =  tempfile.NamedTemporaryFile(suffix=f"", delete=False).name#"temp_mesh.obj"
+    temp_file =  tempfile.NamedTemporaryFile(suffix=f"", delete=False).name
     with open(temp_file+".obj", "w") as f:
         f.write(mesh_text)
     # return temp_file
@@ -114,7 +117,7 @@ def visualize_mesh(mesh_text):
         f.write(mesh_text)
     return temp_file
 
-@spaces.GPU(duration=120)
+# @spaces.GPU(duration=120)
 def chat_llama3_8b(message: str, 
               history: list, 
               temperature: float, 
@@ -138,9 +141,7 @@ def chat_llama3_8b(message: str,
     input_ids = tokenizer.apply_chat_template(conversation, return_tensors="pt").to(model.device)
     
     streamer = TextIteratorStreamer(tokenizer, timeout=10.0, skip_prompt=True, skip_special_tokens=True)
-    # print(max_new_tokens)
-    max_new_tokens=4096
-    temperature=0.9
+
     generate_kwargs = dict(
         input_ids= input_ids,
         streamer=streamer,
@@ -181,16 +182,14 @@ with gr.Blocks(fill_height=True, css=css) as demo:
                         gr.Slider(minimum=0,
                                 maximum=1, 
                                 step=0.1,
-                                value=0.9, 
+                                value=0.95, 
                                 label="Temperature", 
-                                interactive = False,
                                 render=False),
                         gr.Slider(minimum=128, 
-                                maximum=4096,
+                                maximum=8192,
                                 step=1,
                                 value=4096, 
                                 label="Max new tokens", 
-                                interactive = False,
                                 render=False),
                         ],
                     examples=[
@@ -237,4 +236,7 @@ with gr.Blocks(fill_height=True, css=css) as demo:
           
 if __name__ == "__main__":
     demo.launch()
-    
+
+
+
+
