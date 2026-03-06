@@ -1,0 +1,12 @@
+streamlit
+plotly
+pandas
+numpy
+matplotlib
+torch
+transformers
+accelerate
+opencv-python
+Pillow
+imageio
+huggingface_hub
