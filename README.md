@@ -1,141 +1,109 @@
-# Cosmos Sentinel
+# Cosmos Sentinel 🚦
 
-Cosmos Sentinel is a demo-first traffic safety pipeline that combines three stages:
+Cosmos Sentinel is an agentic, demo-first traffic safety pipeline. It evaluates dashcam and traffic videos by combining early-warning collision prediction with high-level multimodal reasoning and future-state video generation.
 
-- **BADAS** for early predictive collision gating
-- **Cosmos Reason 2** for incident understanding and severity narration
-- **Cosmos Predict 2.5** for optional future-world continuation rollouts
+**[Live Gradio Space](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel)** 
 
-The repository is organized so you can demo the full experience from a single Streamlit app while keeping the core pipeline scripts reusable from the command line.
+## 🏗️ Architecture
 
-## What the demo does
+Cosmos Sentinel runs a three-stage intelligent pipeline:
 
-1. Runs BADAS on an input traffic video to find the highest-risk moment.
-2. Extracts a focused clip around that alert window.
-3. Runs Cosmos Reason 2 on the full video plus the focused clip.
-4. Surfaces structured outputs, visual diagnostics, and artifacts in Streamlit.
-5. Optionally runs Cosmos Predict to generate observed or prevented continuation videos.
+1. **Gate:** [BADAS (Ego-Centric Collision Prediction)](https://huggingface.co/nexar-ai/BADAS-Open) acts as a high-frequency predictive gate. It processes the video using V-JEPA2 to find the exact high-risk collision timeframe.
+2. **Reason:** [NVIDIA Cosmos Reason 2](https://github.com/nvidia-cosmos/cosmos-reason2) provides incident understanding. It takes the full video, the BADAS-identified high-risk clip, and generates structured analysis (severity, actor behavior, environmental hazards).
+3. **Predict:** [NVIDIA Cosmos Predict 2.5](https://github.com/nvidia-cosmos/cosmos-predict2.5) acts as a world-simulator. Based on the Reason narrative, it performs "what-if" rollouts (e.g., generating a future where the collision is prevented vs. observed).
 
-## Main entry points
+### Flow Diagram
 
-- `demo_streamlit.py` — primary Streamlit demo UI
-- `main.py` — convenience launcher for the Streamlit app
-- `main_pipeline.py` — CLI orchestration for BADAS + clip extraction + Reason
-- `test_full_pipeline.py` — validation script for staged or full pipeline checks
+```mermaid
+graph TD
+    A[Input Dashcam Video] -->|Raw Frames| B[BADAS Detector V-JEPA2]
+    B -->|Collision Probabilities| C{Risk Threshold Met?}
+    C -->|No| D[Log: Safe state, Keep monitoring]
+    C -->|Yes| E[Extract Pre-Alert Focused Clip]
+    A --> F[NVIDIA Cosmos Reason 2 8B]
+    E --> F
+    F -->|Risk Analysis & Bounding Boxes| G[Structured Payload Generation]
+    G --> H{Run Predict Rollout?}
+    H -->|Yes| I[NVIDIA Cosmos Predict 2.5 2B]
+    I -->|Prompt: Prevented Collision| J[Counterfactual Video]
+    I -->|Prompt: Observed Trajectory| K[Continuation Video]
+    G --> L[Gradio / Streamlit UI Dashboard]
+    J --> L
+    K --> L
+```
 
-## Repository structure
+## 🚀 Features
+
+- **End-to-End Pipeline:** Fully orchestrated from raw MP4 video to intelligent analysis and generated video continuations.
+- **Dual UI Support:** 
+  - **Streamlit App:** A rich local dashboard for debugging, visualizing timelines, and reviewing logs.
+  - **Gradio App:** An optimized interface deployed to Hugging Face Spaces with ZeroGPU support and intelligent model caching.
+- **Visual Diagnostics:** Generates gradient saliency maps, bounding box overlays, risk gauges, and artifact heatmaps dynamically.
+
+## 📂 Repository Structure
 
 ```text
 .
-├── demo_streamlit.py
-├── main.py
-├── main_pipeline.py
-├── badas_detector.py
-├── cosmos_risk_narrator.py
-├── cosmos_predict_runner.py
-├── extract_clip.py
-├── test_full_pipeline.py
-├── .streamlit/config.toml
-├── 1_first.mp4
-├── nexar_data/
-├── cosmos-predict2.5/
-├── cosmos-reason2/
-└── cosmos-cookbook/
+├── demo_streamlit.py         # Primary Streamlit local dashboard
+├── demo_app.py               # Legacy Gradio wrapper
+├── hf_space_repo/            # Source code deployed to the Hugging Face Space
+│   ├── app.py                # Gradio UI for Hugging Face
+│   ├── space_backend.py      # Space-specific pipeline orchestration
+│   └── ...                   # Vendored models for the space
+├── badas_detector.py         # BADAS model loading and sliding-window inference
+├── cosmos_risk_narrator.py   # Cosmos Reason 2 prompt building and inference
+├── cosmos_predict_runner.py  # Cosmos Predict 2.5 generation logic
+├── extract_clip.py           # Focused clip extraction utility
+└── main_pipeline.py          # CLI orchestration for the full pipeline
 ```
 
-## Quickstart
+## 💻 Quickstart (Local Streamlit)
 
-### 1. Create an environment
+### 1. Requirements
+
+- NVIDIA GPU (Ampere or newer, e.g., RTX 3090, A100, H100)
+- Linux (Ubuntu 22.04+)
+- Python 3.10+
+
+### 2. Install Dependencies
+
+You need to install the dependencies for both the pipeline and the vendored Cosmos Predict package.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# Core dependencies
+pip install torch torchvision transformers huggingface_hub opencv-python numpy pillow albumentations gradio streamlit plotly pandas
 ```
 
-### 2. Configure access for gated models or datasets
+*Note: If you want to use the Cosmos Predict module locally, you must follow the [Cosmos Predict 2.5 Setup Guide](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/README.md) to install its specific `uv` workspace dependencies.*
 
-If your BADAS assets or model access require Hugging Face authentication, export a token before running the pipeline:
+### 3. Authentication
+
+You need a Hugging Face token to download the gated models (BADAS and Cosmos).
 
 ```bash
-export HF_TOKEN=your_token_here
+export HF_TOKEN="your_hugging_face_token"
+# Optional: Set a persistent cache directory to avoid re-downloading models
+export HF_HOME="/path/to/your/large/storage/.huggingface"
 ```
 
-You can also start from `.env.example` and load it manually in your shell.
-
-### 3. Make sure required assets are available
-
-This repo expects local assets rather than re-downloading everything automatically during each run.
-
-Typical requirements are:
-
-- BADAS model files under `nexar_data/badas_model/`
-- access to the selected Cosmos Reason model checkpoint
-- vendored `cosmos-predict2.5/` code if you want Predict rollouts
-
-## Run the app
-
-### Streamlit demo
-
-```bash
-python main.py
-```
-
-or
+### 4. Run the Streamlit Dashboard
 
 ```bash
 streamlit run demo_streamlit.py
 ```
 
-### Pipeline only
+## ☁️ Hugging Face Space Deployment
 
-```bash
-python main_pipeline.py 1_first.mp4
-```
+The `hf_space_repo/` directory contains the exact codebase deployed to [Cosmos Sentinel on Hugging Face Spaces](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel).
 
-### Validation
+It is optimized for:
+- **ZeroGPU:** Dynamic `@spaces.GPU` allocation to prevent timeouts during long downloads.
+- **Persistent Storage:** Reads `HF_HOME=/data/.huggingface` to cache the 30GB+ of models across restarts.
+- **Graceful Degradation:** Skips Cosmos Predict locally in the Space to avoid complex workspace dependency issues, focusing purely on the core BADAS + Reason pipeline.
 
-Run the fast staged validation:
+## 📚 Acknowledgements & References
 
-```bash
-python test_full_pipeline.py 1_first.mp4 --stages-only
-```
-
-Run the full validation path:
-
-```bash
-python test_full_pipeline.py 1_first.mp4
-```
-
-## Outputs
-
-The pipeline produces structured payloads and artifacts such as:
-
-- `BADAS_JSON:` detector payloads
-- `REASON_JSON:` narrator payloads
-- `PIPELINE_JSON:` end-to-end summary payloads
-- extracted focus clips
-- saliency and risk visualizations
-- frame strips and rollout videos
-
-Generated artifacts are ignored by default in `.gitignore` so the repo stays clean.
-
-## Notes for submission
-
-- The demo title is **Cosmos Sentinel**.
-- The sample video path is repo-relative so the project is easier to clone and run elsewhere.
-- Hardcoded tokens were removed from the public scripts; use environment variables instead.
-- Large model weights and dataset assets are not bundled directly in the repo.
-
-## Known operational requirements
-
-- CUDA is strongly recommended for Cosmos Reason and BADAS performance.
-- Cosmos Predict is optional and is triggered manually from the UI.
-- Some upstream assets may be gated and require accepted licenses or authenticated access.
-
-## Recommended submission checklist
-
-- Add a project description and demo link in the GitHub repo header.
-- Add screenshots or a short GIF of the Streamlit dashboard.
-- Initialize git and verify `git status` only shows source files you want to commit.
-- Confirm no secrets are present before pushing.
+- [BADAS: Ego-Centric Collision Prediction](https://arxiv.org/abs/2510.14876)
+- [NVIDIA Cosmos Models Overview](https://docs.nvidia.com/cosmos/latest/introduction.html)
+- [NVIDIA Cosmos Reason 2 GitHub](https://github.com/nvidia-cosmos/cosmos-reason2)
+- [NVIDIA Cosmos Predict 2.5 GitHub](https://github.com/nvidia-cosmos/cosmos-predict2.5)
