@@ -4,16 +4,45 @@ import os
 import sys
 import json
 import numpy as np
+from functools import lru_cache
 
 hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 if hf_token and "HF_TOKEN" not in os.environ:
     os.environ["HF_TOKEN"] = hf_token
 
-# Add BADAS model path
-sys.path.append("./nexar_data/badas_model")
+LOCAL_BADAS_MODEL_PATH = os.path.join(os.path.dirname(__file__), "nexar_data", "badas_model")
 
-# Import BADAS loader
-from badas_loader import load_badas_model
+
+def load_badas_loader():
+    if os.path.isdir(LOCAL_BADAS_MODEL_PATH) and LOCAL_BADAS_MODEL_PATH not in sys.path:
+        sys.path.append(LOCAL_BADAS_MODEL_PATH)
+    try:
+        from badas_loader import load_badas_model as local_load_badas_model
+        return local_load_badas_model
+    except Exception:
+        pass
+    try:
+        from badas import load_badas_model as package_load_badas_model
+        return package_load_badas_model
+    except Exception:
+        pass
+    from huggingface_hub import hf_hub_download
+
+    loader_path = hf_hub_download(
+        repo_id=os.environ.get("BADAS_MODEL_REPO", "nexar-ai/badas-open"),
+        filename="badas_loader.py",
+        token=hf_token,
+    )
+    loader_parent = os.path.dirname(loader_path)
+    if loader_parent not in sys.path:
+        sys.path.insert(0, loader_parent)
+    from badas_loader import load_badas_model as hub_load_badas_model
+    return hub_load_badas_model
+
+
+@lru_cache(maxsize=1)
+def get_badas_model():
+    return load_badas_loader()()
 
 
 def extract_window_frames(video_path, end_time_sec, target_fps, frame_count):
@@ -186,7 +215,7 @@ def summarize_threshold_runs(collision_frames, sampled_fps):
 def run_badas_detector(video_path, confidence_threshold=0.5):
     """Run BADAS-Open collision detection on video"""
     print("Loading BADAS-Open model...")
-    model = load_badas_model()
+    model = get_badas_model()
     model_info = model.get_model_info()
     
     # Run prediction on entire video

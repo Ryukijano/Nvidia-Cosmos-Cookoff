@@ -7,22 +7,24 @@ import json
 import os
 import re
 import sys
+from functools import lru_cache
+import numpy as np
 
-# Load Cosmos Reason 2 model
-base_model_name = os.environ.get("COSMOS_REASON_MODEL", "nvidia/Cosmos-Reason2-8B")
-print(f"Loading base Cosmos Reason model: {base_model_name}")
+DEFAULT_REASON_MODEL_NAME = os.environ.get("COSMOS_REASON_MODEL", "nvidia/Cosmos-Reason2-8B")
 
-base_model = Qwen3VLForConditionalGeneration.from_pretrained(
-    base_model_name,
-    device_map="auto",
-    torch_dtype=torch.float16,
-)
 
-print("Using pretrained checkpoint only; adapter loading is disabled")
-model = base_model
-
-processor = AutoProcessor.from_pretrained(base_model_name)
-print("✅ Fine-tuned model loaded (FP16) on", model.device)
+@lru_cache(maxsize=2)
+def get_reason_model_bundle(model_name=DEFAULT_REASON_MODEL_NAME):
+    print(f"Loading base Cosmos Reason model: {model_name}")
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model_name,
+        device_map="auto",
+        torch_dtype=torch.float16,
+    )
+    print("Using pretrained checkpoint only; adapter loading is disabled")
+    processor = AutoProcessor.from_pretrained(model_name)
+    print("✅ Fine-tuned model loaded (FP16) on", model.device)
+    return model_name, model, processor
 
 # System and user prompts for CCTV traffic reasoning
 SYSTEM_PROMPT = "You are Cosmos Risk Narrator, an AI traffic-safety analyst reading fixed CCTV or roadside camera footage. Your task is to detect possible accidents, distinguish near-misses from confirmed impacts, and estimate crash severity in clear operational language."
@@ -380,7 +382,8 @@ def process_video(video_path, max_frames=96):
     }
 
 
-def generate_reason_response(video_inputs, user_prompt):
+def generate_reason_response(video_inputs, user_prompt, model_name=None):
+    resolved_model_name, model, processor = get_reason_model_bundle(model_name or DEFAULT_REASON_MODEL_NAME)
     content = []
     for video_input in video_inputs:
         content.append(
@@ -411,9 +414,13 @@ def generate_reason_response(video_inputs, user_prompt):
     )
     output = processor.batch_decode(generated, skip_special_tokens=True)[0]
     assistant_part = output.split("assistant")[-1].strip()
-    return assistant_part, inputs, generated
+    return assistant_part, inputs, generated, {
+        "base_model_name": resolved_model_name,
+        "device": str(model.device),
+        "dtype": str(getattr(model, "dtype", torch.float16)),
+    }
 
-def run_risk_narrator(video_path, badas_context=None, focus_video_path=None):
+def run_risk_narrator(video_path, badas_context=None, focus_video_path=None, model_name=None):
     frames, frame_metadata = process_video(video_path)
     user_prompt = build_user_prompt(badas_context or {})
     video_inputs = [
@@ -436,13 +443,13 @@ def run_risk_narrator(video_path, badas_context=None, focus_video_path=None):
                     "metadata": focus_frame_metadata,
                 }
             )
-    assistant_part, inputs, generated = generate_reason_response(video_inputs, user_prompt)
+    assistant_part, inputs, generated, model_metadata = generate_reason_response(video_inputs, user_prompt, model_name=model_name)
     initial_payload = extract_reason_payload(assistant_part)
     second_pass_used = False
     if payload_requires_second_pass(initial_payload, badas_context or {}):
         second_pass_used = True
         second_pass_prompt = build_second_pass_prompt(badas_context or {})
-        assistant_part, inputs, generated = generate_reason_response(video_inputs, second_pass_prompt)
+        assistant_part, inputs, generated, model_metadata = generate_reason_response(video_inputs, second_pass_prompt, model_name=model_name)
         user_prompt = second_pass_prompt
         final_payload = extract_reason_payload(assistant_part)
     else:
@@ -456,11 +463,11 @@ def run_risk_narrator(video_path, badas_context=None, focus_video_path=None):
         "user_prompt": user_prompt,
         "badas_context": badas_context or {},
         "model": {
-            "base_model_name": base_model_name,
+            "base_model_name": model_metadata["base_model_name"],
             "checkpoint_source": "pretrained_huggingface_checkpoint",
             "adapter_loaded": False,
-            "device": str(model.device),
-            "dtype": str(getattr(model, "dtype", torch.float16)),
+            "device": model_metadata["device"],
+            "dtype": model_metadata["dtype"],
         },
         "generation_config": GENERATION_CONFIG,
         "input_token_count": int(inputs["input_ids"].shape[-1]),

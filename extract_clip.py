@@ -36,8 +36,10 @@ def extract_pre_alert_clip(video_path, alert_time, output_path="./extracted_clip
         
         out.release()
         print(f"Extracted clip saved to {output_path} ({start_time:.2f}s to {end_time:.2f}s)")
+        return output_path
     else:
         print("No frames extracted")
+        return None
 
 if __name__ == "__main__":
     video_path = "./nexar_data/sample_videos/sample_dashcam_2.mp4"
