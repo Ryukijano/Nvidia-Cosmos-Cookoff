@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.git/
+.gitignore
+.cache/
+.pytest_cache/
+.mypy_cache/
+.streamlit/
+.env
+.env.*
+venv/
+.venv/
+*.ipynb
