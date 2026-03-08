@@ -28,9 +28,9 @@ ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 WORKDIR /app
 
-COPY --chown=user requirements.txt /app/requirements.txt
+COPY --chown=user runtime-requirements.txt /app/runtime-requirements.txt
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install -r requirements.txt
+    python3 -m pip install -r runtime-requirements.txt
 
 COPY --chown=user . /app
 

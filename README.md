@@ -76,6 +76,11 @@ If a required checkpoint is missing locally, it will try to download it from the
 
 If `HF_HOME` / `HF_HUB_CACHE` are not set explicitly, the app will automatically use persistent `/data` storage when it exists and otherwise fall back to a local cache inside the Space folder.
 
+## Dependency files
+
+- `runtime-requirements.txt` is the actual Docker runtime dependency set used by the app image.
+- Root `requirements.txt` is kept intentionally minimal so Hugging Face Spaces Dev Mode bootstrap layers do not try to reinstall the full CUDA/PyTorch stack outside the Docker image.
+
 ### Per-model overrides
 
 - `AIENDO_MODEL_REPO_ID`, `DINO_MODEL_REPO_ID`, `VJEPA2_MODEL_REPO_ID`
