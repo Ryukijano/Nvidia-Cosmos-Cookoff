@@ -7,7 +7,6 @@ __pycache__/
 .cache/
 .pytest_cache/
 .mypy_cache/
-.streamlit/
 .env
 .env.*
 venv/

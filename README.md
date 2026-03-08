@@ -65,6 +65,14 @@ The Dockerfile is also set up to be **HF Dev Mode compatible**:
 The app looks for model files in `SPACE_MODEL_DIR` first (default: `./model`).
 If a required checkpoint is missing locally, it will try to download it from the configured model repo(s).
 
+### Upload and dashboard behavior
+
+- The Space now keeps a single active predictor loaded at a time and unloads the previous model when the picker changes.
+- MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
+- `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** for this Space.
+- Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.
+- The UI shows file size, duration, fps, frame count, resolution, working-storage headroom, and suppresses inline preview for very large uploads to keep the browser path lighter.
+
 ### Common environment variables
 
 - `SPACE_ENABLED_MODELS` — comma-separated list of model families to expose in the UI
@@ -123,6 +131,9 @@ python scripts/smoke_test.py --model vjepa2 --model-dir /path/to/model
 - Streamlit UI
 - DINO-Endo demo by default, with optional multi-model selector when enabled
 - image upload and video upload
+- dashboard-style model/runtime status
+- robust video metadata probing with OpenCV + ffprobe fallback
+- large single-file uploads up to the configured Streamlit cap
 - per-frame phase timeline output for video
 - JSON / CSV export
 

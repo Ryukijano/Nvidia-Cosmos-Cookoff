@@ -13,9 +13,13 @@ APP_ROOT = Path(__file__).resolve().parent
 MODEL_ROOT = Path(os.environ.get("SPACE_MODEL_DIR", APP_ROOT / "model")).expanduser().resolve()
 
 
+def _is_writable_directory(path: Path) -> bool:
+    return path.is_dir() and os.access(path, os.W_OK | os.X_OK)
+
+
 def _default_hf_home() -> Path:
     data_dir = Path("/data")
-    if data_dir.is_dir():
+    if _is_writable_directory(data_dir):
         return data_dir / ".huggingface"
     return APP_ROOT / ".cache" / "huggingface"
 
