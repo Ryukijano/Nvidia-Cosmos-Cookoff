@@ -11,7 +11,7 @@ app_port: 7860
 
 This folder is an isolated Hugging Face Space scaffold for the phase-recognition models in this repository.
 It is intentionally separate from the existing FastAPI webapp and is designed to expose **DINO-Endo, AI-Endo, and V-JEPA2** on paid GPU hardware such as **1x A10G (24 GB VRAM)**.
-The public UI now behaves like a small **project portfolio**: DINO-Endo Surgery is the first featured workspace, and the same landing page can later host additional projects without rebuilding the overall shell.
+The public UI now behaves like a small **project portfolio** with explicit page navigation: a landing home page, a dedicated **DINO-Endo Surgery** workspace page, and a portfolio/projects page for future demos.
 The default featured model remains **DINO-Endo**, but the same Space can load and unload all three model families one at a time.
 
 ## Supported model families
@@ -68,12 +68,16 @@ If a required checkpoint is missing locally, it will try to download it from the
 
 ### Upload and dashboard behavior
 
-- The top of the app is a reusable portfolio landing section, with DINO-Endo Surgery as the current live workspace.
+- The Space now routes across multiple portfolio pages instead of stacking everything into a single long screen.
+- The **Home** page acts as the landing site for **Ryukijano's Project Portfolio**.
+- The **DINO-Endo Surgery** page is the dedicated hosted workspace for image/video inference.
+- The **Projects** page lists the current live workspace plus the next planned portfolio pages.
 - The active model family is selected through a visible **model slider** in the workspace rather than a hidden picker.
 - The Space now keeps a single active predictor loaded at a time and unloads the previous model when the model slider changes.
 - MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
 - `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** and disables file watching / usage telemetry so runtime cache writes do not trigger restart loops.
 - Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.
+- Video analysis now produces an **annotated playback clip** with the predicted phase HUD burned directly onto the video frames, echoing the overlay style from the main `webapp/` dashboard.
 - The UI shows file size, duration, fps, frame count, resolution, working-storage headroom, and suppresses inline preview for very large uploads to keep the browser path lighter.
 - V-JEPA2 is labeled as a slower first load so users understand the cold-cache cost of its very large encoder checkpoint.
 
@@ -150,11 +154,12 @@ python scripts/smoke_test.py --model vjepa2 --model-dir /path/to/model
 ## Scope of v1
 
 - Streamlit UI
-- project-portfolio landing page with DINO-Endo Surgery as the first hosted workspace
+- project-portfolio landing page with separate Home, DINO-Endo Surgery, and Projects pages
 - three-model slider for DINO-Endo, AI-Endo, and V-JEPA2, with DINO-Endo selected by default
 - image upload and video upload
 - dashboard-style model/runtime status
 - robust video metadata probing with OpenCV + ffprobe fallback
+- annotated overlay playback for analysed videos
 - large single-file uploads up to the configured Streamlit cap
 - per-frame phase timeline output for video
 - optional live encoder/decoder explainability sidebar with true attention where available and labeled proxies elsewhere

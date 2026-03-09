@@ -21,6 +21,8 @@ from predictor import MODEL_LABELS, PHASE_LABELS, normalize_model_key
 from video_utils import (
     STREAMLIT_SERVER_MAX_UPLOAD_MB,
     SUPPORTED_VIDEO_TYPES,
+    create_overlay_video_writer,
+    draw_prediction_overlay,
     format_bytes,
     get_upload_size_bytes,
     get_workspace_free_bytes,
@@ -28,6 +30,7 @@ from video_utils import (
     recommended_frame_stride,
     should_show_inline_preview,
     spool_uploaded_video,
+    transcode_video_for_streamlit,
 )
 
 st.set_page_config(page_title="Ryukijano's Project Portfolio", layout="wide")
@@ -74,6 +77,18 @@ SPACE_TITLE = "Ryukijano's Project Portfolio"
 FEATURED_PROJECT_TITLE = "DINO-Endo Surgery Workspace"
 MODEL_SLIDER_KEY = "workspace-model-slider"
 SELECTED_MODEL_STATE_KEY = "selected_model_key"
+PORTFOLIO_PAGE_STATE_KEY = "portfolio-page"
+VIDEO_ANALYSIS_STATE_KEY = "video-analysis-state"
+PORTFOLIO_PAGE_LABELS = {
+    "home": "Home",
+    "workspace": "DINO-Endo Surgery",
+    "projects": "Projects",
+}
+PORTFOLIO_PAGE_SUMMARIES = {
+    "home": "Landing page for Ryukijano's Project Portfolio and the featured hosted work.",
+    "workspace": "Dedicated Dino-Endo Surgery workspace with model controls, explainability, and annotated video playback.",
+    "projects": "Project index for the current live workspace and the next portfolio pages to add.",
+}
 
 
 @dataclass(frozen=True)
@@ -102,6 +117,39 @@ HOSTED_PROJECTS = (
             "Manual load and unload for GPU-safe model switching",
         ),
         tags=("Computer vision", "Medical video", "Multi-model inference"),
+    ),
+)
+
+PORTFOLIO_PROJECTS = HOSTED_PROJECTS + (
+    HostedProject(
+        key="jetson-runtime-notes",
+        title="Jetson Deployment Notes",
+        status="Coming soon",
+        summary=(
+            "A future portfolio page for the clinic-side Jetson deployment story: upload reliability, local retention, "
+            "and report generation in the full webapp stack."
+        ),
+        highlights=(
+            "Cloudflare-safe upload architecture",
+            "Retention-aware clinical workflows",
+            "Single-worker queue constraints on Jetson",
+        ),
+        tags=("Edge deployment", "Clinical workflow", "FastAPI"),
+    ),
+    HostedProject(
+        key="explainability-lab",
+        title="Explainability Lab",
+        status="Planned",
+        summary=(
+            "A follow-on page for comparing encoder attention, temporal decoder strips, and proxy saliency views "
+            "across the three phase-recognition model families."
+        ),
+        highlights=(
+            "Layer/head comparisons",
+            "Temporal decoder strip review",
+            "Side-by-side model introspection",
+        ),
+        tags=("Attention maps", "Interpretability", "Model analysis"),
     ),
 )
 
@@ -293,10 +341,10 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
     )
 
     metrics = st.columns(4)
-    metrics[0].metric("Hosted projects", len(HOSTED_PROJECTS))
+    metrics[0].metric("Portfolio pages", len(PORTFOLIO_PAGE_LABELS))
     metrics[1].metric("Model families", len(enabled_model_keys))
     metrics[2].metric("Explainability", "Opt-in")
-    metrics[3].metric("Exports", "JSON + CSV")
+    metrics[3].metric("Overlay playback", "Built in")
 
     left_col, right_col = st.columns([1.8, 1.2], gap="large")
     with left_col:
@@ -321,11 +369,11 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
                 <span class="hub-status">Portfolio shell</span>
                 <h3>Ready for more demos</h3>
                 <p>
-                    The top section now works as a reusable portfolio shell instead of a one-off page. Add more project cards
-                    and workspace blocks here later, while keeping one shared brand, layout, and deployment target.
+                    The landing site now routes between distinct pages instead of stacking everything into one long screen.
+                    Add more project pages here later while keeping one shared brand, layout, and deployment target.
                 </p>
                 <ul>
-                    <li>Keep each project's controls inside its own workspace section.</li>
+                    <li>Keep each project's controls inside its own dedicated page.</li>
                     <li>Reuse the same landing-page hero, metrics, and project-card layout.</li>
                     <li>Preserve one-model-at-a-time loading so future demos stay GPU-friendly.</li>
                 </ul>
@@ -334,12 +382,79 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
             unsafe_allow_html=True,
         )
 
+    action_cols = st.columns([1.2, 1.0, 1.0], gap="medium")
+    if action_cols[0].button("Open DINO-Endo Surgery workspace", key="open-featured-workspace", use_container_width=True, type="primary"):
+        _navigate_to_page("workspace")
+    if action_cols[1].button("Browse project pages", key="open-project-pages", use_container_width=True):
+        _navigate_to_page("projects")
+    action_cols[2].download_button(
+        "Export portfolio summary",
+        json.dumps(
+            {
+                "title": SPACE_TITLE,
+                "pages": list(PORTFOLIO_PAGE_LABELS.values()),
+                "projects": [
+                    {"title": project.title, "status": project.status, "tags": list(project.tags)}
+                    for project in PORTFOLIO_PROJECTS
+                ],
+            },
+            indent=2,
+        ).encode("utf-8"),
+        file_name="portfolio_summary.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+
+
+def _render_projects_page() -> None:
+    st.markdown(
+        """
+        <section class="workspace-card">
+            <p class="hub-eyebrow">Project index</p>
+            <h2>Portfolio pages</h2>
+            <p class="workspace-copy">
+                The portfolio shell now has distinct pages. DINO-Endo Surgery is the live hosted workspace, while the
+                other cards mark the next pages to spin out from this shared Space foundation.
+            </p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    project_cols = st.columns(len(PORTFOLIO_PROJECTS), gap="large")
+    for col, project in zip(project_cols, PORTFOLIO_PROJECTS):
+        highlights_html = "".join(f"<li>{item}</li>" for item in project.highlights)
+        with col:
+            st.markdown(
+                f"""
+                <section class="hub-card">
+                    <span class="hub-status">{project.status}</span>
+                    <h3>{project.title}</h3>
+                    <p>{project.summary}</p>
+                    <div class="hub-chip-row">{_render_hub_chips(project.tags)}</div>
+                    <ul>{highlights_html}</ul>
+                </section>
+                """,
+                unsafe_allow_html=True,
+            )
+            if project.key == HOSTED_PROJECTS[0].key:
+                if st.button("Open workspace page", key=f"open-page-{project.key}", use_container_width=True, type="primary"):
+                    _navigate_to_page("workspace")
+            else:
+                st.button(
+                    "Page planned",
+                    key=f"planned-page-{project.key}",
+                    use_container_width=True,
+                    disabled=True,
+                )
+
 
 def _render_workspace_header(enabled_model_keys: list[str], model_key: str) -> None:
     selected_label = _model_option_label(model_key)
     selection_note = (
         "Use the model slider to move between DINO-Endo, AI-Endo, and V-JEPA2. "
-        "Only one model stays loaded at a time so the Space remains responsive on shared GPU hardware."
+        "Only one model stays loaded at a time so the Space remains responsive on shared GPU hardware, and video runs now "
+        "produce an annotated playback clip with the phase HUD burned directly onto the frames."
     )
     st.markdown(
         f"""
@@ -388,7 +503,49 @@ def _get_model_manager() -> SpaceModelManager:
     return manager
 
 
+def _current_portfolio_page() -> str:
+    page_key = st.session_state.get(PORTFOLIO_PAGE_STATE_KEY, "home")
+    if page_key not in PORTFOLIO_PAGE_LABELS:
+        page_key = "home"
+        st.session_state[PORTFOLIO_PAGE_STATE_KEY] = page_key
+    return page_key
+
+
+def _navigate_to_page(page_key: str) -> None:
+    if page_key not in PORTFOLIO_PAGE_LABELS:
+        raise RuntimeError(f"Unsupported portfolio page '{page_key}'")
+    st.session_state[PORTFOLIO_PAGE_STATE_KEY] = page_key
+    st.rerun()
+
+
+def _render_page_navigation() -> str:
+    current_page = _current_portfolio_page()
+    st.caption("Portfolio navigation")
+    nav_cols = st.columns(len(PORTFOLIO_PAGE_LABELS))
+    for col, (page_key, label) in zip(nav_cols, PORTFOLIO_PAGE_LABELS.items()):
+        if col.button(
+            label,
+            key=f"portfolio-nav-{page_key}",
+            use_container_width=True,
+            type="primary" if page_key == current_page else "secondary",
+        ) and page_key != current_page:
+            _navigate_to_page(page_key)
+    st.caption(PORTFOLIO_PAGE_SUMMARIES[current_page])
+    return current_page
+
+
+def _clear_video_analysis() -> None:
+    analysis_state = st.session_state.pop(VIDEO_ANALYSIS_STATE_KEY, None)
+    if not analysis_state:
+        return
+
+    annotated_video_path = analysis_state.get("annotated_video_path")
+    if annotated_video_path:
+        Path(annotated_video_path).unlink(missing_ok=True)
+
+
 def _clear_video_stage() -> None:
+    _clear_video_analysis()
     temp_path = st.session_state.pop("staged_video_path", None)
     if temp_path is not None:
         Path(temp_path).unlink(missing_ok=True)
@@ -419,6 +576,12 @@ def _prepare_staged_video(uploaded_file):
     st.session_state["staged_video_path"] = str(temp_path)
     st.session_state["staged_video_meta"] = meta
     return temp_path, meta
+
+
+def _video_analysis_signature(
+    staged_signature: tuple[str, int, str] | None, model_key: str, frame_stride: int, max_frames: int
+) -> tuple:
+    return staged_signature, model_key, frame_stride, max_frames
 
 
 def _records_to_frame(records):
@@ -512,6 +675,8 @@ def _analyse_video(
     frame_stride: int,
     max_frames: int,
     *,
+    video_info: dict | None = None,
+    model_label: str,
     explainability_config: dict | None = None,
     explainability_callback=None,
 ):
@@ -520,16 +685,27 @@ def _analyse_video(
     if not capture.isOpened():
         raise RuntimeError("Unable to open uploaded video")
 
-    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+    total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or (video_info or {}).get("frame_count") or 0)
+    fps = float(capture.get(cv2.CAP_PROP_FPS) or (video_info or {}).get("fps") or 0.0)
+    output_fps = fps if fps > 0 else float((video_info or {}).get("fps") or 24.0)
     progress = st.progress(0)
     status = st.empty()
 
     predictor.reset_state()
     records = []
     processed = 0
+    rendered_frames = 0
     frame_index = 0
+    truncated = False
     explain_enabled = bool(explainability_config and explainability_config.get("enabled"))
+    latest_overlay_result = {
+        "phase": "unknown",
+        "confidence": 0.0,
+    }
+    overlay_writer = None
+    overlay_intermediate_path = None
+    overlay_warning = None
+    analysis_failed = False
 
     try:
         while True:
@@ -537,51 +713,107 @@ def _analyse_video(
             if not ok:
                 break
 
-            if frame_index % frame_stride != 0:
-                frame_index += 1
-                continue
+            sampled_frame = frame_index % frame_stride == 0
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            started = time.perf_counter()
-            result = predictor.predict(rgb, explainability=explainability_config if explain_enabled else None)
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            if sampled_frame:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                started = time.perf_counter()
+                result = predictor.predict(rgb, explainability=explainability_config if explain_enabled else None)
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
 
-            probs = result.get("probs", [0.0, 0.0, 0.0, 0.0])
-            record = {
-                "frame_index": frame_index,
-                "timestamp_sec": round(frame_index / fps, 3) if fps > 0 else None,
-                "phase": result.get("phase", "unknown"),
-                "phase_id": _phase_index(result.get("phase", "unknown")),
-                "confidence": float(result.get("confidence", 0.0)),
-                "frames_used": int(result.get("frames_used", processed + 1)),
-                "idle": float(probs[0]) if len(probs) > 0 else 0.0,
-                "marking": float(probs[1]) if len(probs) > 1 else 0.0,
-                "injection": float(probs[2]) if len(probs) > 2 else 0.0,
-                "dissection": float(probs[3]) if len(probs) > 3 else 0.0,
-                "inference_ms": round(elapsed_ms, 3),
-            }
-            records.append(record)
-            processed += 1
+                probs = result.get("probs", [0.0, 0.0, 0.0, 0.0])
+                record = {
+                    "frame_index": frame_index,
+                    "timestamp_sec": round(frame_index / fps, 3) if fps > 0 else None,
+                    "phase": result.get("phase", "unknown"),
+                    "phase_id": _phase_index(result.get("phase", "unknown")),
+                    "confidence": float(result.get("confidence", 0.0)),
+                    "frames_used": int(result.get("frames_used", processed + 1)),
+                    "idle": float(probs[0]) if len(probs) > 0 else 0.0,
+                    "marking": float(probs[1]) if len(probs) > 1 else 0.0,
+                    "injection": float(probs[2]) if len(probs) > 2 else 0.0,
+                    "dissection": float(probs[3]) if len(probs) > 3 else 0.0,
+                    "inference_ms": round(elapsed_ms, 3),
+                }
+                records.append(record)
+                latest_overlay_result = {
+                    "phase": record["phase"],
+                    "confidence": record["confidence"],
+                }
+                processed += 1
 
-            if explain_enabled and explainability_callback is not None:
-                explainability_callback(result.get("explainability"), processed, frame_index)
+                if explain_enabled and explainability_callback is not None:
+                    explainability_callback(result.get("explainability"), processed, frame_index)
+
+            if overlay_writer is None:
+                overlay_writer, overlay_intermediate_path = create_overlay_video_writer(
+                    frame_size=(frame.shape[1], frame.shape[0]),
+                    fps=output_fps,
+                    temp_dir=temp_path.parent,
+                )
+
+            overlay_frame = draw_prediction_overlay(
+                frame,
+                phase=latest_overlay_result["phase"],
+                confidence=float(latest_overlay_result["confidence"]),
+                model_label=model_label,
+                frame_index=frame_index,
+                fps=output_fps,
+                total_frames=total_frames,
+                sampled_frame=sampled_frame,
+            )
+            overlay_writer.write(overlay_frame)
+            rendered_frames += 1
 
             if total_frames > 0:
                 progress.progress(min(frame_index + 1, total_frames) / total_frames)
             else:
                 progress.progress(min(processed / max_frames, 1.0))
-            status.caption(f"Processed {processed} sampled frames")
+            status.caption(
+                f"Processed {processed} sampled frames · rendered {rendered_frames} playback frames"
+            )
 
             frame_index += 1
-            if processed >= max_frames:
+            if sampled_frame and processed >= max_frames:
+                truncated = total_frames <= 0 or frame_index < total_frames
                 break
+    except Exception:
+        analysis_failed = True
+        raise
     finally:
         capture.release()
         predictor.reset_state()
+        if overlay_writer is not None:
+            overlay_writer.release()
+        progress.empty()
+        status.empty()
+        if analysis_failed and overlay_intermediate_path is not None:
+            overlay_intermediate_path.unlink(missing_ok=True)
 
-    progress.empty()
-    status.empty()
-    return records, {"fps": fps, "total_frames": total_frames, "sampled_frames": processed}
+    annotated_video_path = None
+    if overlay_intermediate_path is not None and rendered_frames > 0:
+        transcoded_path, overlay_warning = transcode_video_for_streamlit(
+            overlay_intermediate_path,
+            temp_dir=temp_path.parent,
+        )
+        annotated_video_path = str(transcoded_path)
+
+    analysis_meta = {
+        "fps": fps,
+        "total_frames": total_frames,
+        "sampled_frames": processed,
+        "rendered_frames": rendered_frames,
+        "annotated_video_path": annotated_video_path,
+        "annotated_video_warning": overlay_warning,
+        "analysis_complete": not truncated,
+    }
+    if annotated_video_path is not None:
+        annotated_path = Path(annotated_video_path)
+        if annotated_path.exists():
+            analysis_meta["annotated_video_size_label"] = format_bytes(annotated_path.stat().st_size)
+            analysis_meta["annotated_video_duration_sec"] = rendered_frames / output_fps if output_fps > 0 else None
+
+    return records, analysis_meta
 
 
 def _render_single_result(result: dict):
@@ -606,6 +838,27 @@ def _render_video_results(records, meta):
     if not records:
         st.warning("No frames were processed from the uploaded video.")
         return
+
+    annotated_video_path = meta.get("annotated_video_path")
+    if annotated_video_path:
+        st.subheader("Annotated playback")
+        st.caption(
+            "The analysed clip now includes a HUD-style phase overlay directly on the video frames, mirroring the live webapp feel."
+        )
+        st.video(annotated_video_path)
+        overlay_details = []
+        if meta.get("annotated_video_size_label"):
+            overlay_details.append(f"overlay size {meta['annotated_video_size_label']}")
+        if meta.get("rendered_frames"):
+            overlay_details.append(f"{int(meta['rendered_frames'])} rendered frames")
+        if overlay_details:
+            st.caption(" · ".join(overlay_details))
+    if meta.get("annotated_video_warning"):
+        st.warning(meta["annotated_video_warning"])
+    if not meta.get("analysis_complete", True):
+        st.info(
+            "The playback clip and tables cover only the analysed portion of the video because the sampled-frame limit was reached."
+        )
 
     df = _records_to_frame(records)
     counts = Counter(df["phase"].tolist())
@@ -645,12 +898,9 @@ def _render_video_results(records, meta):
     right.download_button("Download CSV", csv_payload, file_name="phase_timeline.csv", mime="text/csv")
 
 
-def main():
-    enabled_model_keys = _enabled_model_keys()
-    default_model_key = _default_model_key(enabled_model_keys)
-    manager = _get_model_manager()
-    _inject_app_styles()
-    _render_project_hub(enabled_model_keys)
+def _render_workspace_page(
+    enabled_model_keys: list[str], default_model_key: str, manager: SpaceModelManager
+) -> None:
     previous_selected_model_key, model_key = _resolve_model_selection(enabled_model_keys, default_model_key)
 
     _render_workspace_header(enabled_model_keys, model_key)
@@ -659,6 +909,7 @@ def main():
     st.session_state[SELECTED_MODEL_STATE_KEY] = model_key
     if previous_selected_model_key is not None and previous_selected_model_key != model_key:
         manager.unload_model()
+        _clear_video_analysis()
 
     explainability_config, explainability_spec = _build_explainability_config(manager, model_key)
 
@@ -775,6 +1026,17 @@ def main():
                 except Exception as exc:
                     st.error(str(exc))
                 else:
+                    analysis_signature = _video_analysis_signature(
+                        st.session_state.get("staged_video_signature"),
+                        model_key,
+                        frame_stride,
+                        max_frames,
+                    )
+                    saved_analysis = st.session_state.get(VIDEO_ANALYSIS_STATE_KEY)
+                    if saved_analysis and saved_analysis.get("signature") != analysis_signature:
+                        _clear_video_analysis()
+                        saved_analysis = None
+
                     info_cols = st.columns(5)
                     info_cols[0].metric("File size", video_meta["file_size_label"])
                     info_cols[1].metric("Duration", video_meta["duration_label"])
@@ -812,6 +1074,7 @@ def main():
                                 title=f"Live explainability · sampled frame {processed_count}",
                             )
 
+                        _clear_video_analysis()
                         try:
                             with st.spinner(f"Running {MODEL_LABELS[model_key]} on {uploaded_video.name}..."):
                                 predictor = manager.get_predictor(model_key)
@@ -820,6 +1083,8 @@ def main():
                                 predictor,
                                 frame_stride=frame_stride,
                                 max_frames=max_frames,
+                                video_info=video_meta,
+                                model_label=MODEL_LABELS[model_key],
                                 explainability_config=explainability_config if explainability_config.get("enabled") else None,
                                 explainability_callback=(
                                     _video_explainability_callback
@@ -831,20 +1096,48 @@ def main():
                                 **video_meta,
                                 **analysis_meta,
                             }
+                            st.session_state[VIDEO_ANALYSIS_STATE_KEY] = {
+                                "signature": analysis_signature,
+                                "records": records,
+                                "meta": meta,
+                                "annotated_video_path": meta.get("annotated_video_path"),
+                                "latest_explainability": latest_payload["value"],
+                            }
+                            saved_analysis = st.session_state[VIDEO_ANALYSIS_STATE_KEY]
                         except Exception as exc:
                             st.error(str(exc))
-                        else:
-                            _render_video_results(records, meta)
-                            if explainability_config.get("enabled"):
-                                _render_explainability_panel(
-                                    video_explain_placeholder,
-                                    latest_payload["value"],
-                                    enabled=True,
-                                    spec=explainability_spec,
-                                    title="Explainability",
-                                )
+
+                    saved_analysis = st.session_state.get(VIDEO_ANALYSIS_STATE_KEY)
+                    if saved_analysis and saved_analysis.get("signature") == analysis_signature:
+                        _render_video_results(saved_analysis["records"], saved_analysis["meta"])
+                        if explainability_config.get("enabled"):
+                            _render_explainability_panel(
+                                video_explain_placeholder,
+                                saved_analysis.get("latest_explainability"),
+                                enabled=True,
+                                spec=explainability_spec,
+                                title="Explainability",
+                            )
             else:
                 _clear_video_stage()
+
+
+def main():
+    enabled_model_keys = _enabled_model_keys()
+    default_model_key = _default_model_key(enabled_model_keys)
+    manager = _get_model_manager()
+    _inject_app_styles()
+    current_page = _render_page_navigation()
+
+    if current_page == "home":
+        _render_project_hub(enabled_model_keys)
+        return
+
+    if current_page == "projects":
+        _render_projects_page()
+        return
+
+    _render_workspace_page(enabled_model_keys, default_model_key, manager)
 
 
 if __name__ == "__main__":

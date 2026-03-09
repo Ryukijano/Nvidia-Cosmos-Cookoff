@@ -8,12 +8,23 @@ import tempfile
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 STREAMLIT_SERVER_MAX_UPLOAD_MB = 4096
 INLINE_VIDEO_PREVIEW_MAX_MB = 256
 MIN_FREE_WORKSPACE_BUFFER_MB = int(os.getenv("SPACE_MIN_FREE_SPACE_BUFFER_MB", "2048"))
 COPY_CHUNK_BYTES = 8 * 1024 * 1024
 SUPPORTED_VIDEO_TYPES = ["mp4", "mov", "avi", "mkv", "webm", "m4v"]
+PHASE_OVERLAY_BGR = {
+    "idle": (139, 125, 96),
+    "marking": (255, 140, 79),
+    "injection": (255, 198, 104),
+    "dissection": (107, 107, 255),
+    "unknown": (248, 250, 252),
+}
+HUD_BACKGROUND_BGR = (20, 10, 6)
+HUD_TEXT_BGR = (252, 250, 248)
+HUD_MUTED_BGR = (215, 200, 191)
 
 
 def format_bytes(num_bytes: int) -> str:
@@ -71,6 +82,51 @@ def get_workspace_free_bytes(temp_dir: Path | None = None) -> int:
     return shutil.disk_usage(target_dir).free
 
 
+def create_temp_video_path(
+    *, suffix: str = ".mp4", prefix: str = "portfolio-overlay-", temp_dir: Path | None = None
+) -> Path:
+    target_dir = Path(temp_dir or tempfile.gettempdir())
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=target_dir)
+    os.close(fd)
+    return Path(temp_name)
+
+
+def create_overlay_video_writer(
+    *, frame_size: tuple[int, int], fps: float, temp_dir: Path | None = None
+) -> tuple[cv2.VideoWriter, Path]:
+    effective_fps = fps if fps > 0 else 24.0
+    candidates = (
+        ("mp4v", ".mp4"),
+        ("avc1", ".mp4"),
+        ("MJPG", ".avi"),
+        ("XVID", ".avi"),
+    )
+    tried = []
+    for codec, suffix in candidates:
+        temp_path = create_temp_video_path(
+            prefix="portfolio-overlay-raw-",
+            suffix=suffix,
+            temp_dir=temp_dir,
+        )
+        writer = cv2.VideoWriter(
+            str(temp_path),
+            cv2.VideoWriter_fourcc(*codec),
+            effective_fps,
+            frame_size,
+        )
+        if writer.isOpened():
+            return writer, temp_path
+        writer.release()
+        temp_path.unlink(missing_ok=True)
+        tried.append(f"{codec}{suffix}")
+
+    raise RuntimeError(
+        "Unable to create annotated playback video for this environment. "
+        f"Tried {', '.join(tried)}."
+    )
+
+
 def spool_uploaded_video(uploaded_file, suffix: str | None = None, temp_dir: Path | None = None) -> Path:
     file_size_bytes = get_upload_size_bytes(uploaded_file)
     if file_size_bytes > STREAMLIT_SERVER_MAX_UPLOAD_MB * 1024 * 1024:
@@ -97,6 +153,150 @@ def spool_uploaded_video(uploaded_file, suffix: str | None = None, temp_dir: Pat
 
     uploaded_file.seek(0)
     return temp_path
+
+
+def draw_prediction_overlay(
+    frame: np.ndarray,
+    *,
+    phase: str,
+    confidence: float,
+    model_label: str,
+    frame_index: int,
+    fps: float,
+    total_frames: int | None = None,
+    sampled_frame: bool = True,
+) -> np.ndarray:
+    annotated = frame.copy()
+    overlay = annotated.copy()
+    height, width = annotated.shape[:2]
+    margin = max(16, width // 64)
+    available_width = max(120, width - (margin * 2))
+    available_height = max(72, height - (margin * 2))
+    panel_width = min(max(int(width * 0.44), 240), available_width)
+    panel_height = min(max(int(height * 0.16), 88), min(140, available_height))
+    accent = _phase_overlay_color_bgr(phase)
+
+    panel_x1 = margin
+    panel_y1 = max(margin, height - panel_height - margin)
+    panel_x2 = panel_x1 + panel_width
+    panel_y2 = panel_y1 + panel_height
+    cv2.rectangle(overlay, (panel_x1, panel_y1), (panel_x2, panel_y2), HUD_BACKGROUND_BGR, -1)
+    cv2.rectangle(overlay, (panel_x1, panel_y1), (panel_x2, panel_y2), accent, 2)
+    cv2.rectangle(overlay, (panel_x1 + 12, panel_y1 + 12), (panel_x1 + 18, panel_y2 - 12), accent, -1)
+    cv2.addWeighted(overlay, 0.68, annotated, 0.32, 0, annotated)
+
+    base_scale = max(0.52, min(1.0, width / 1200.0))
+    phase_label = phase.title() if phase and phase.lower() != "unknown" else "--"
+    status_label = "Sampled frame" if sampled_frame else "Carry-forward overlay"
+    _draw_shadowed_text(
+        annotated,
+        f"Phase: {phase_label}",
+        (panel_x1 + 34, panel_y1 + 32),
+        accent,
+        font_scale=base_scale * 0.92,
+        thickness=2,
+    )
+    _draw_shadowed_text(
+        annotated,
+        f"Confidence {confidence:.1%} • {status_label}",
+        (panel_x1 + 34, panel_y1 + 58),
+        HUD_TEXT_BGR,
+        font_scale=base_scale * 0.62,
+        thickness=1,
+    )
+
+    current_time = format_duration(frame_index / fps if fps > 0 else None)
+    total_time = format_duration(total_frames / fps if fps > 0 and total_frames else None)
+    header_text = model_label
+    if current_time != "Unknown" and total_time != "Unknown":
+        header_text = f"{header_text} • {current_time} / {total_time}"
+    elif current_time != "Unknown":
+        header_text = f"{header_text} • {current_time}"
+
+    header_scale = max(0.46, min(0.62, width / 1600.0))
+    text_width, text_height = cv2.getTextSize(
+        header_text, cv2.FONT_HERSHEY_SIMPLEX, header_scale, 1
+    )[0]
+    header_width = min(text_width + 28, available_width)
+    header_height = text_height + 18
+    header_x2 = width - margin
+    header_x1 = max(margin, header_x2 - header_width)
+    header_y1 = margin
+    header_y2 = header_y1 + header_height
+    header_overlay = annotated.copy()
+    cv2.rectangle(header_overlay, (header_x1, header_y1), (header_x2, header_y2), HUD_BACKGROUND_BGR, -1)
+    cv2.rectangle(header_overlay, (header_x1, header_y1), (header_x2, header_y2), accent, 1)
+    cv2.addWeighted(header_overlay, 0.62, annotated, 0.38, 0, annotated)
+    _draw_shadowed_text(
+        annotated,
+        header_text,
+        (header_x1 + 14, header_y1 + text_height + 5),
+        HUD_MUTED_BGR,
+        font_scale=header_scale,
+        thickness=1,
+    )
+
+    if total_frames and total_frames > 0:
+        progress_ratio = min(max((frame_index + 1) / total_frames, 0.0), 1.0)
+        bar_x1 = margin
+        bar_y1 = height - 8
+        bar_x2 = width - margin
+        bar_y2 = height - 4
+        cv2.rectangle(annotated, (bar_x1, bar_y1), (bar_x2, bar_y2), (60, 67, 82), -1)
+        cv2.rectangle(
+            annotated,
+            (bar_x1, bar_y1),
+            (bar_x1 + int((bar_x2 - bar_x1) * progress_ratio), bar_y2),
+            accent,
+            -1,
+        )
+
+    return annotated
+
+
+def transcode_video_for_streamlit(
+    video_path: str | Path, *, temp_dir: Path | None = None
+) -> tuple[Path, str | None]:
+    input_path = Path(video_path)
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        return input_path, "ffmpeg is unavailable, so the raw overlay clip is being used for playback."
+
+    output_path = create_temp_video_path(prefix="portfolio-overlay-final-", suffix=".mp4", temp_dir=temp_dir)
+    command = [
+        ffmpeg_path,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(input_path),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)
+    except subprocess.TimeoutExpired:
+        output_path.unlink(missing_ok=True)
+        return input_path, "ffmpeg timed out while transcoding the overlay clip, so the raw overlay video is being used."
+    if result.returncode != 0:
+        output_path.unlink(missing_ok=True)
+        error_line = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown ffmpeg error"
+        return (
+            input_path,
+            f"ffmpeg could not transcode the overlay clip for browser-friendly playback ({error_line}). "
+            "Using the directly encoded clip instead.",
+        )
+
+    input_path.unlink(missing_ok=True)
+    return output_path, None
 
 
 def probe_video_info(video_path: str | Path) -> dict:
@@ -221,3 +421,40 @@ def _parse_fraction(value: str) -> float:
         return float(value)
     except ValueError:
         return 0.0
+
+
+def _phase_overlay_color_bgr(phase: str | None) -> tuple[int, int, int]:
+    phase_key = (phase or "").strip().lower()
+    return PHASE_OVERLAY_BGR.get(phase_key, PHASE_OVERLAY_BGR["unknown"])
+
+
+def _draw_shadowed_text(
+    frame: np.ndarray,
+    text: str,
+    origin: tuple[int, int],
+    color: tuple[int, int, int],
+    *,
+    font_scale: float,
+    thickness: int,
+) -> None:
+    shadow_origin = (origin[0] + 1, origin[1] + 1)
+    cv2.putText(
+        frame,
+        text,
+        shadow_origin,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        font_scale,
+        (0, 0, 0),
+        thickness + 2,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        text,
+        origin,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        font_scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
