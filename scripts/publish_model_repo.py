@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import shutil
 import tempfile
@@ -54,17 +55,34 @@ Set the following Space environment variable so the Streamlit Space can download
 """
 
 
+def _stage_checkpoint_file(src: Path, dst: Path) -> None:
+    if dst.exists():
+        src_stat = src.stat()
+        dst_stat = dst.stat()
+        if dst_stat.st_size == src_stat.st_size and dst_stat.st_mtime_ns == src_stat.st_mtime_ns:
+            return
+        dst.unlink()
+
+    try:
+        os.link(src, dst)
+    except OSError as exc:
+        if exc.errno not in {errno.EXDEV, errno.EPERM, errno.EACCES, errno.EMLINK, errno.ENOENT}:
+            raise
+        shutil.copy2(src, dst)
+
+
 def _stage_model_family(*, family: str, model_dir: Path, staging_dir: Path, repo_id: str) -> int:
     spec = MODEL_SPECS[family]
     copied_files: list[str] = []
     total_bytes = 0
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
     for filename in spec.required_files:
         src = model_dir / filename
         if not src.exists():
             raise FileNotFoundError(f"Missing required checkpoint: {src}")
         dst = staging_dir / filename
-        shutil.copy2(src, dst)
+        _stage_checkpoint_file(src, dst)
         copied_files.append(filename)
         total_bytes += src.stat().st_size
 
@@ -73,7 +91,7 @@ def _stage_model_family(*, family: str, model_dir: Path, staging_dir: Path, repo
         if not src.exists():
             continue
         dst = staging_dir / filename
-        shutil.copy2(src, dst)
+        _stage_checkpoint_file(src, dst)
         copied_files.append(filename)
         total_bytes += src.stat().st_size
 
@@ -110,6 +128,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--revision", default=None, help="Optional target revision or branch.")
     parser.add_argument("--private", action="store_true", help="Create the model repo as private.")
     parser.add_argument(
+        "--staging-dir",
+        default=None,
+        help="Optional persistent directory to stage files and upload metadata for resumable retries.",
+    )
+    parser.add_argument(
         "--token-env",
         default="HF_TOKEN",
         help="Environment variable name containing the Hugging Face write token.",
@@ -124,8 +147,18 @@ def main() -> None:
     api = HfApi(token=token)
     api.create_repo(repo_id=args.repo_id, repo_type="model", private=args.private, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix=f"hf-space-{args.family}-") as temp_dir:
-        staging_dir = Path(temp_dir)
+    if args.staging_dir:
+        staging_dir = Path(args.staging_dir).expanduser().resolve()
+        total_bytes = _stage_model_family(
+            family=args.family,
+            model_dir=model_dir,
+            staging_dir=staging_dir,
+            repo_id=args.repo_id,
+        )
+        cleanup = None
+    else:
+        cleanup = tempfile.TemporaryDirectory(prefix=f"hf-space-{args.family}-")
+        staging_dir = Path(cleanup.name)
         total_bytes = _stage_model_family(
             family=args.family,
             model_dir=model_dir,
@@ -133,6 +166,7 @@ def main() -> None:
             repo_id=args.repo_id,
         )
 
+    try:
         upload_kwargs = {
             "repo_id": args.repo_id,
             "repo_type": "model",
@@ -147,6 +181,9 @@ def main() -> None:
         else:
             api.upload_folder(**upload_kwargs)
             mode = "upload_folder"
+    finally:
+        if cleanup is not None:
+            cleanup.cleanup()
 
     print(f"Published {args.family} checkpoints to {args.repo_id} via {mode}")
     print(f"Suggested Space variable: {ENV_VAR_BY_FAMILY[args.family]}={args.repo_id}")

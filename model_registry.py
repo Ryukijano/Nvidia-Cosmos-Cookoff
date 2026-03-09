@@ -10,7 +10,6 @@ from huggingface_hub import hf_hub_download
 from huggingface_hub.utils import EntryNotFoundError
 
 APP_ROOT = Path(__file__).resolve().parent
-MODEL_ROOT = Path(os.environ.get("SPACE_MODEL_DIR", APP_ROOT / "model")).expanduser().resolve()
 
 
 def _is_writable_directory(path: Path) -> bool:
@@ -21,11 +20,36 @@ def _default_hf_home() -> Path:
     data_dir = Path("/data")
     if _is_writable_directory(data_dir):
         return data_dir / ".huggingface"
-    return APP_ROOT / ".cache" / "huggingface"
+    return Path.home() / ".cache" / "huggingface"
 
 
 HF_HOME = Path(os.environ.setdefault("HF_HOME", str(_default_hf_home()))).expanduser().resolve()
 os.environ.setdefault("HF_HUB_CACHE", str(HF_HOME / "hub"))
+
+
+def _has_local_checkpoint_files(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    return any(path.glob("*.pt")) or any(path.glob("*.pth"))
+
+
+def default_model_root() -> Path:
+    configured = os.environ.get("SPACE_MODEL_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+
+    local_model_dir = APP_ROOT / "model"
+    if _has_local_checkpoint_files(local_model_dir):
+        return local_model_dir.resolve()
+
+    data_dir = Path("/data")
+    if _is_writable_directory(data_dir):
+        return (data_dir / "model").resolve()
+
+    return (HF_HOME / "models").resolve()
+
+
+MODEL_ROOT = default_model_root()
 
 
 @dataclass(frozen=True)

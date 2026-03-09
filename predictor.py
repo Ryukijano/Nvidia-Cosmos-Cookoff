@@ -19,6 +19,7 @@ try:
 except ImportError:  # pragma: no cover
     MIXED_PRECISION_AVAILABLE = False
 
+from model_registry import default_model_root
 from model.resnet import ResNet
 from model.mstcn import MultiStageModel
 from model.transformer import Transformer
@@ -45,7 +46,7 @@ def _app_root() -> Path:
 
 
 def default_model_dir() -> str:
-    return str(Path(os.environ.get("SPACE_MODEL_DIR", _app_root() / "model")).expanduser().resolve())
+    return str(default_model_root())
 
 
 def normalize_model_key(name: str | None) -> str:

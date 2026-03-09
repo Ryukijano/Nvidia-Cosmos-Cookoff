@@ -18,6 +18,7 @@ ROOT_FILES = (
     "predictor.py",
     "requirements.txt",
     "runtime-requirements.txt",
+    "start_space.py",
     "video_utils.py",
 )
 

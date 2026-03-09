@@ -1,5 +1,5 @@
 ---
-title: AI-Endo Project Hub
+title: "Ryukijano's Project Portfolio"
 emoji: 🩺
 colorFrom: blue
 colorTo: green
@@ -7,11 +7,11 @@ sdk: docker
 app_port: 7860
 ---
 
-# AI-Endo Project Hub
+# Ryukijano's Project Portfolio
 
 This folder is an isolated Hugging Face Space scaffold for the phase-recognition models in this repository.
 It is intentionally separate from the existing FastAPI webapp and is designed to expose **DINO-Endo, AI-Endo, and V-JEPA2** on paid GPU hardware such as **1x A10G (24 GB VRAM)**.
-The public UI now behaves like a small **project hub**: DINO-Endo Surgery is the first featured workspace, and the same landing page can later host additional projects without rebuilding the overall shell.
+The public UI now behaves like a small **project portfolio**: DINO-Endo Surgery is the first featured workspace, and the same landing page can later host additional projects without rebuilding the overall shell.
 The default featured model remains **DINO-Endo**, but the same Space can load and unload all three model families one at a time.
 
 ## Supported model families
@@ -63,16 +63,16 @@ The Dockerfile is also set up to be **HF Dev Mode compatible**:
 
 ## Runtime configuration
 
-The app looks for model files in `SPACE_MODEL_DIR` first (default: `./model`).
+The app looks for model files in `SPACE_MODEL_DIR` first. When that env var is unset, the runtime prefers persistent `/data/model`, then falls back to `~/.cache/huggingface/models`, and only uses a local bundled `model/` directory when actual checkpoint files are already present there.
 If a required checkpoint is missing locally, it will try to download it from the configured model repo(s).
 
 ### Upload and dashboard behavior
 
-- The top of the app is a reusable project-hub landing section, with DINO-Endo Surgery as the current live workspace.
+- The top of the app is a reusable portfolio landing section, with DINO-Endo Surgery as the current live workspace.
 - The active model family is selected through a visible **model slider** in the workspace rather than a hidden picker.
 - The Space now keeps a single active predictor loaded at a time and unloads the previous model when the model slider changes.
 - MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
-- `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** for this Space.
+- `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** and disables file watching / usage telemetry so runtime cache writes do not trigger restart loops.
 - Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.
 - The UI shows file size, duration, fps, frame count, resolution, working-storage headroom, and suppresses inline preview for very large uploads to keep the browser path lighter.
 - V-JEPA2 is labeled as a slower first load so users understand the cold-cache cost of its very large encoder checkpoint.
@@ -89,12 +89,12 @@ If a required checkpoint is missing locally, it will try to download it from the
 
 - `SPACE_ENABLED_MODELS` — comma-separated list of model families to expose in the UI
 - `SPACE_DEFAULT_MODEL` — default selected model when multiple model families are enabled
-- `SPACE_MODEL_DIR` — local directory where checkpoints should live (default: `./model`)
+- `SPACE_MODEL_DIR` — local directory where checkpoints should live (default: `/data/model` when writable, otherwise `~/.cache/huggingface/models`)
 - `PHASE_MODEL_REPO_ID` — shared HF model repo for all weights
 - `PHASE_MODEL_REVISION` — optional shared revision/tag/commit
 - `HF_TOKEN` — only needed for private or gated repos
 
-If `HF_HOME` / `HF_HUB_CACHE` are not set explicitly, the app will automatically use persistent `/data` storage when it exists and otherwise fall back to a local cache inside the Space folder.
+If `HF_HOME` / `HF_HUB_CACHE` are not set explicitly, the app will automatically use persistent `/data` storage when it exists and otherwise fall back to the standard cache under the app user's home directory.
 
 ## Dependency files
 
@@ -150,7 +150,7 @@ python scripts/smoke_test.py --model vjepa2 --model-dir /path/to/model
 ## Scope of v1
 
 - Streamlit UI
-- project-hub landing page with DINO-Endo Surgery as the first hosted workspace
+- project-portfolio landing page with DINO-Endo Surgery as the first hosted workspace
 - three-model slider for DINO-Endo, AI-Endo, and V-JEPA2, with DINO-Endo selected by default
 - image upload and video upload
 - dashboard-style model/runtime status

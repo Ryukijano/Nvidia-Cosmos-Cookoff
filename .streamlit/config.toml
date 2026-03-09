@@ -1,3 +1,8 @@
 [server]
 maxUploadSize = 4096
 maxMessageSize = 4096
+fileWatcherType = "none"
+runOnSave = false
+
+[browser]
+gatherUsageStats = false

@@ -30,7 +30,7 @@ from video_utils import (
     spool_uploaded_video,
 )
 
-st.set_page_config(page_title="AI-Endo Project Hub", layout="wide")
+st.set_page_config(page_title="Ryukijano's Project Portfolio", layout="wide")
 
 MODEL_OPTION_LABELS = {
     "aiendo": "AI-Endo",
@@ -70,7 +70,7 @@ FALLBACK_EXPLAINABILITY_SPECS = {
 }
 
 
-SPACE_TITLE = "AI-Endo Project Hub"
+SPACE_TITLE = "Ryukijano's Project Portfolio"
 FEATURED_PROJECT_TITLE = "DINO-Endo Surgery Workspace"
 MODEL_SLIDER_KEY = "workspace-model-slider"
 SELECTED_MODEL_STATE_KEY = "selected_model_key"
@@ -278,14 +278,14 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
     st.markdown(
         f"""
         <section class="hub-hero">
-            <p class="hub-eyebrow">Multi-project landing page</p>
+            <p class="hub-eyebrow">Ryukijano portfolio</p>
             <h1>{SPACE_TITLE}</h1>
             <p class="hub-subtitle">
-                A polished landing page for applied vision demos. {FEATURED_PROJECT_TITLE} is the first live workspace,
-                and the layout is ready to host more projects later without rebuilding the app shell.
+                A polished portfolio shell for applied vision demos. {FEATURED_PROJECT_TITLE} is the first live workspace,
+                and the layout is ready to host more projects later without rebuilding the overall site shell.
             </p>
             <div class="hub-chip-row">
-                {_render_hub_chips(tuple(enabled_labels) + ("Future-project ready", "Streamlit + Docker Space"))}
+                {_render_hub_chips(tuple(enabled_labels) + ("Portfolio ready", "Streamlit + Docker Space"))}
             </div>
         </section>
         """,
@@ -318,10 +318,10 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
         st.markdown(
             """
             <section class="hub-card">
-                <span class="hub-status">Platform shell</span>
+                <span class="hub-status">Portfolio shell</span>
                 <h3>Ready for more demos</h3>
                 <p>
-                    The top section now works as a reusable project hub instead of a one-off page. Add more project cards
+                    The top section now works as a reusable portfolio shell instead of a one-off page. Add more project cards
                     and workspace blocks here later, while keeping one shared brand, layout, and deployment target.
                 </p>
                 <ul>

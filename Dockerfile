@@ -3,9 +3,11 @@ FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    SPACE_MODEL_DIR=/app/model \
     SPACE_ENABLED_MODELS=dinov2,aiendo,vjepa2 \
-    SPACE_DEFAULT_MODEL=dinov2
+    SPACE_DEFAULT_MODEL=dinov2 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    STREAMLIT_SERVER_FILE_WATCHER_TYPE=none \
+    STREAMLIT_SERVER_RUN_ON_SAVE=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
@@ -35,4 +37,4 @@ RUN python3 -m pip install --upgrade pip && \
 COPY --chown=user . /app
 
 EXPOSE 7860
-CMD ["python3", "-m", "streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0", "--server.headless=true"]
+CMD ["python3", "start_space.py"]
