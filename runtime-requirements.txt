@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
-streamlit>=1.40,<2
+streamlit>=1.55,<2
 torch==2.5.1
 torchvision==0.20.1
 numpy>=1.26,<3

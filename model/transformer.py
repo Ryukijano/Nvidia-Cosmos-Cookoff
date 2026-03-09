@@ -146,7 +146,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.layers = nn.ModuleList([DecoderLayer(d_model, d_ff, d_k, d_v, n_heads, len_q) for _ in range(n_layers)])
 
-    def forward(self, dec_inputs, enc_outputs):
+    def forward(self, dec_inputs, enc_outputs, return_attentions=False):
         '''
         dec_inputs: [batch_size, tgt_len, d_model]  [512, 1, 5]
         enc_intpus: [batch_size, src_len, d_model]  [512, 30, 5]
@@ -160,6 +160,8 @@ class Decoder(nn.Module):
             # dec_outputs: [batch_size, tgt_len, d_model], dec_self_attn: [batch_size, n_heads, tgt_len, tgt_len], dec_enc_attn: [batch_size, h_heads, tgt_len, src_len]
             dec_outputs, dec_enc_attn = layer(dec_outputs, enc_outputs)
             dec_enc_attns.append(dec_enc_attn)
+        if return_attentions:
+            return dec_outputs, dec_enc_attns
         return dec_outputs
 
 
@@ -175,7 +177,7 @@ class Transformer2_3_1(nn.Module):
         self.encoder = Encoder(d_model, d_ff, d_k, d_v, n_layers, n_heads, len_q)
         self.decoder = Decoder(d_model, d_ff, d_k, d_v, 1, n_heads, len_q)
 
-    def forward(self, enc_inputs, dec_inputs):
+    def forward(self, enc_inputs, dec_inputs, return_attentions=False):
         '''
         enc_inputs: [Frames, src_len, d_model]  [512, 30, 5]
         dec_inputs: [Frames, 1, d_model]  [512, 1, 5]
@@ -185,8 +187,11 @@ class Transformer2_3_1(nn.Module):
 
         # enc_outputs: [batch_size, src_len, d_model], enc_self_attns: [n_layers, batch_size, n_heads, src_len, src_len]
         enc_outputs, enc_self_attns = self.encoder(enc_inputs)  # Self-attention for temporal features
-        dec_outputs = self.decoder(dec_inputs, enc_outputs)
-        return dec_outputs
+        decoder_outputs = self.decoder(dec_inputs, enc_outputs, return_attentions=return_attentions)
+        if return_attentions:
+            dec_outputs, dec_enc_attns = decoder_outputs
+            return dec_outputs, {"encoder_self_attns": enc_self_attns, "decoder_cross_attns": dec_enc_attns}
+        return decoder_outputs
 
 
 class Transformer(nn.Module):
@@ -210,7 +215,7 @@ class Transformer(nn.Module):
             nn.Linear(self.d_model, out_features, bias=False)
         )
 
-    def forward(self, x, long_feature):
+    def forward(self, x, long_feature, return_attention=False):
         # x: [B, 256, T]; long_feature: [B, T, 256]
         B, D, T = x.shape
         out_features = x.transpose(1, 2)  # [B, T, 256]
@@ -238,9 +243,24 @@ class Transformer(nn.Module):
                 win = out_features[:, i - spa_len + 1:i + 1, :]
             out_feas.append(win)
         out_feas = torch.stack(out_feas, dim=0).squeeze(1)
-        out_feas, _ = self.spatial_encoder(out_feas)
+        out_feas, spatial_attn = self.spatial_encoder(out_feas)
 
         # Temporal-spatial fusion
-        output = self.transformer(inputs, out_feas)  # [T, B, 1, 256] collapsed → [T, B, 256]
+        transformer_outputs = self.transformer(inputs, out_feas, return_attentions=return_attention)
+        if return_attention:
+            output, attention_meta = transformer_outputs
+        else:
+            output = transformer_outputs
         output = self.out(output)  # [T, B, C]
-        return output.transpose(0, 1)  # [B, T, C]
+        output = output.transpose(0, 1)  # [B, T, C]
+        if not return_attention:
+            return output
+
+        decoder_attn = attention_meta["decoder_cross_attns"][-1]
+        spatial_attn_last = spatial_attn[-1]
+        decoder_strip = decoder_attn[-1].mean(dim=0).mean(dim=0).detach()
+        spatial_strip = spatial_attn_last.mean(dim=0).mean(dim=0).detach()
+        return output, {
+            "decoder_strip": decoder_strip,
+            "spatial_strip": spatial_strip,
+        }

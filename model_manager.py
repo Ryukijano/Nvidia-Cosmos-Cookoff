@@ -56,6 +56,16 @@ class SpaceModelManager:
         self.current_predictor = predictor
         return predictor
 
+    def get_loaded_predictor(self, model_key: str | None = None):
+        if self.current_predictor is None:
+            return None
+        if model_key is None:
+            return self.current_predictor
+        normalized_key = normalize_model_key(model_key)
+        if self.current_model_key != normalized_key:
+            return None
+        return self.current_predictor
+
     def reset_predictor_state(self) -> None:
         if self.current_predictor is not None and hasattr(self.current_predictor, "reset_state"):
             self.current_predictor.reset_state()

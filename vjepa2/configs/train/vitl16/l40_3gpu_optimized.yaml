@@ -1,0 +1,74 @@
+app: vjepa
+# 3x L40 GPU configuration (48GB each, excellent for training)
+nodes: 1
+tasks_per_node: 3  # 3 L40 GPUs
+cpus_per_task: 16  # Good CPU allocation
+mem_per_gpu: 48G   # L40 has 48GB memory (corrected)
+
+folder: /scratch/cbjp404/AI-Endo/vjepa2_training/l40_vitl_animal_trials
+
+data:
+  dataset_type: surgical  # Your surgical dataset
+  datasets: ["/scratch/cbjp404/AI-Endo/animal_trial_data_dict_proper.yaml"]
+  frames_per_clip: 64   # Back to standard 64 frames
+  frame_step: 1
+  batch_size: 16        # Good batch size per GPU (3x16=48 total)
+  crop_size: 256        # Standard resolution
+  patch_size: 16
+  dataset_fpcs: [64]    # Match frames_per_clip
+  tubelet_size: 2
+  fps: 4               # Sample every 4th frame for efficiency
+  num_workers: 8       # Good for 3 GPUs
+  persistent_workers: true
+  pin_mem: true
+
+data_aug:
+  auto_augment: false
+  motion_shift: false
+  random_resize_aspect_ratio: [0.75, 1.35]
+  random_resize_scale: [0.3, 1.0]
+  reprob: 0.0
+
+loss:
+  loss_exp: 1.0
+
+mask:
+- aspect_ratio: [0.75, 1.5]
+  full_complement: false
+  max_keep: null
+  max_temporal_keep: 1.0
+  num_blocks: 8         # Full masking blocks
+  spatial_scale: [0.15, 0.15]
+  temporal_scale: [1.0, 1.0]
+
+meta:
+  dtype: bfloat16       # Memory efficient
+  eval_freq: 50         # Reasonable evaluation frequency
+  load_checkpoint: true   # Resume from checkpoint
+  read_checkpoint: /scratch/cbjp404/AI-Endo/vjepa2_training/l40_vitl_animal_trials/latest.pt
+  save_every_freq: 25   # Save regularly
+  seed: 42
+  use_sdpa: true
+
+model:
+  model_name: vit_large   # Full ViT-Large
+  pred_depth: 12          # Full predictor depth
+  pred_embed_dim: 384
+  pred_num_heads: 12      # Full attention heads
+  uniform_power: true
+  use_activation_checkpointing: true  # Memory saving
+  use_mask_tokens: true
+  use_rope: true
+  zero_init_mask_tokens: true
+
+optimization:
+  ema: [0.99925, 0.99925]  # Standard momentum
+  epochs: 100              # Good training length
+  final_lr: 0.000525       # Standard final LR
+  final_weight_decay: 0.04
+  ipe: 970                 # Iterations per epoch (46560 frames / 48 batch_size)
+  ipe_scale: 1.25
+  lr: 0.000525             # Standard LR
+  start_lr: 0.0001         # Standard start LR
+  warmup: 40               # Standard warmup
+  weight_decay: 0.04

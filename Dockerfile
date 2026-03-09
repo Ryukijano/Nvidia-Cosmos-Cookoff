@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     SPACE_MODEL_DIR=/app/model \
-    SPACE_ENABLED_MODELS=dinov2 \
+    SPACE_ENABLED_MODELS=dinov2,aiendo,vjepa2 \
     SPACE_DEFAULT_MODEL=dinov2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

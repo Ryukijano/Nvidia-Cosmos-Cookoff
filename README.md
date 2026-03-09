@@ -1,5 +1,4 @@
----
-title: DINO-ENDO Phase Recognition
+title: AI-Endo Project Hub
 emoji: 🩺
 colorFrom: blue
 colorTo: green
@@ -7,11 +6,12 @@ sdk: docker
 app_port: 7860
 ---
 
-# DINO-ENDO Streamlit Space
+# AI-Endo Project Hub
 
 This folder is an isolated Hugging Face Space scaffold for the phase-recognition models in this repository.
-It is intentionally separate from the existing FastAPI webapp and defaults to a **DINO-Endo demo** on paid GPU hardware such as **1x A10G (24 GB VRAM)**.
-The same code can still expose AI-Endo and V-JEPA2 when you opt into them through environment variables.
+It is intentionally separate from the existing FastAPI webapp and is designed to expose **DINO-Endo, AI-Endo, and V-JEPA2** on paid GPU hardware such as **1x A10G (24 GB VRAM)**.
+The public UI now behaves like a small **project hub**: DINO-Endo Surgery is the first featured workspace, and the same landing page can later host additional projects without rebuilding the overall shell.
+The default featured model remains **DINO-Endo**, but the same Space can load and unload all three model families one at a time.
 
 ## Supported model families
 
@@ -42,15 +42,15 @@ A fully local `model/` folder is still supported as a fallback.
 
 ## Default Space behavior
 
-The Docker Space is configured to boot as a **DINO-Endo-first demo**:
+The Docker Space is configured to boot as a **three-model public demo** with **DINO-Endo** selected by default:
 
-- `SPACE_ENABLED_MODELS=dinov2`
+- `SPACE_ENABLED_MODELS=dinov2,aiendo,vjepa2`
 - `SPACE_DEFAULT_MODEL=dinov2`
 
-If you want the same Space build to expose multiple model families again, override those environment variables in Space Settings, for example:
+If you want to narrow the public picker to a subset of models, override those environment variables in Space Settings, for example:
 
 ```text
-SPACE_ENABLED_MODELS=dinov2,aiendo,vjepa2
+SPACE_ENABLED_MODELS=dinov2
 SPACE_DEFAULT_MODEL=dinov2
 ```
 
@@ -67,11 +67,22 @@ If a required checkpoint is missing locally, it will try to download it from the
 
 ### Upload and dashboard behavior
 
-- The Space now keeps a single active predictor loaded at a time and unloads the previous model when the picker changes.
+- The top of the app is a reusable project-hub landing section, with DINO-Endo Surgery as the current live workspace.
+- The active model family is selected through a visible **model slider** in the workspace rather than a hidden picker.
+- The Space now keeps a single active predictor loaded at a time and unloads the previous model when the model slider changes.
 - MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
 - `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** for this Space.
 - Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.
 - The UI shows file size, duration, fps, frame count, resolution, working-storage headroom, and suppresses inline preview for very large uploads to keep the browser path lighter.
+- V-JEPA2 is labeled as a slower first load so users understand the cold-cache cost of its very large encoder checkpoint.
+
+### Explainability behavior
+
+- The sidebar includes an opt-in live explainability toggle for encoder/decoder visualizations.
+- DINO-Endo and V-JEPA2 use true encoder self-attention maps, while AI-Endo uses a labeled proxy encoder overlay from ResNet activations.
+- AI-Endo and DINO-Endo render decoder-side temporal attention strips from the custom Transformer path.
+- V-JEPA2 renders a labeled proxy temporal strip from decoder feature energy because its classifier head is an MLP, not an attention block.
+- Encoder controls expose **layer/head sliders** when the loaded model supports true encoder attention.
 
 ### Common environment variables
 
@@ -116,6 +127,15 @@ That script refreshes the vendored source copies inside this folder before publi
 4. Upload your checkpoints to HF **model repo(s)**.
 5. Configure the relevant repo IDs (and `HF_TOKEN` only if the repos are private).
 
+### Deployment helper scripts
+
+- `python scripts/stage_space_bundle.py --overwrite --output-dir /tmp/dino_space_minimal_upload`
+  - stages a code-only upload bundle for the current multi-model Space without local caches or checkpoints.
+- `python scripts/publish_model_repo.py --family aiendo --repo-id <owner/repo> --model-dir /path/to/model`
+  - publishes one model family to a Hugging Face **model repo** and automatically switches to `upload_large_folder()` for very large bundles.
+- `python scripts/publish_space_repo.py --repo-id <owner/space> --dino-model-repo-id <owner/dino-repo> --aiendo-model-repo-id <owner/aiendo-repo> --vjepa2-model-repo-id <owner/vjepa2-repo>`
+  - stages/uploads the Docker Space bundle and updates the key Space environment variables for the three-model demo.
+
 ## Local smoke test
 
 Once the Space dependencies are installed, you can smoke test a predictor directly:
@@ -129,12 +149,14 @@ python scripts/smoke_test.py --model vjepa2 --model-dir /path/to/model
 ## Scope of v1
 
 - Streamlit UI
-- DINO-Endo demo by default, with optional multi-model selector when enabled
+- project-hub landing page with DINO-Endo Surgery as the first hosted workspace
+- three-model slider for DINO-Endo, AI-Endo, and V-JEPA2, with DINO-Endo selected by default
 - image upload and video upload
 - dashboard-style model/runtime status
 - robust video metadata probing with OpenCV + ffprobe fallback
 - large single-file uploads up to the configured Streamlit cap
 - per-frame phase timeline output for video
+- optional live encoder/decoder explainability sidebar with true attention where available and labeled proxies elsewhere
 - JSON / CSV export
 
 Not included in v1:

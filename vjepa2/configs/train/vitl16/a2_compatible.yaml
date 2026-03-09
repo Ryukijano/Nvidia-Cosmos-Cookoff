@@ -1,0 +1,74 @@
+app: vjepa
+# A2 GPU compatible configuration (single GPU, limited memory)
+nodes: 1
+tasks_per_node: 1  # Single A2 GPU
+cpus_per_task: 8   # Moderate CPU usage
+mem_per_gpu: 16G   # A2 has 16GB memory
+
+folder: /scratch/cbjp404/AI-Endo/vjepa2_training/a2_vitl_animal_trials
+
+data:
+  dataset_type: surgical  # Your surgical dataset
+  dataset_path: /scratch/cbjp404/AI-Endo/animal_trial_data_dict.yaml
+  frames_per_clip: 32   # Reduced from 64 for memory constraints
+  frame_step: 1
+  batch_size: 4         # Very small batch size for A2 GPU
+  crop_size: 224        # Reduced from 256 for memory
+  patch_size: 16
+  dataset_fpcs: [32]    # Match frames_per_clip
+  tubelet_size: 2
+  fps: 1               # Process every frame
+  num_workers: 4       # Reduced for single GPU
+  persistent_workers: true
+  pin_mem: true
+
+data_aug:
+  auto_augment: false
+  motion_shift: false
+  random_resize_aspect_ratio: [0.8, 1.2]
+  random_resize_scale: [0.5, 1.0]
+  reprob: 0.0
+
+loss:
+  loss_exp: 1.0
+
+mask:
+- aspect_ratio: [0.75, 1.5]
+  full_complement: false
+  max_keep: null
+  max_temporal_keep: 1.0
+  num_blocks: 4        # Reduced from 8
+  spatial_scale: [0.15, 0.15]
+  temporal_scale: [1.0, 1.0]
+
+meta:
+  dtype: bfloat16      # Use bfloat16 for memory efficiency
+  eval_freq: 10        # More frequent evaluation
+  load_checkpoint: false  # Start from scratch for A2
+  read_checkpoint: null
+  save_every_freq: 5   # Save more frequently
+  seed: 42
+  use_sdpa: true
+
+model:
+  model_name: vit_large  # Still use ViT-Large but with optimizations
+  pred_depth: 6         # Reduced from 12 for memory
+  pred_embed_dim: 384
+  pred_num_heads: 6     # Reduced from 12
+  uniform_power: true
+  use_activation_checkpointing: true  # Memory saving
+  use_mask_tokens: true
+  use_rope: true
+  zero_init_mask_tokens: true
+
+optimization:
+  ema: [0.996, 0.996]  # Adjusted momentum
+  epochs: 50           # More epochs for small batch training
+  final_lr: 0.0001     # Lower final LR
+  final_weight_decay: 0.04
+  ipe: 100             # Iterations per epoch (adjust based on data size)
+  ipe_scale: 1.0
+  lr: 0.0001           # Lower LR for stability
+  start_lr: 0.00001    # Lower start LR
+  warmup: 10           # Shorter warmup
+  weight_decay: 0.04
