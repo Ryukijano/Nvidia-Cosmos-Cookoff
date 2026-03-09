@@ -104,6 +104,7 @@ If `HF_HOME` / `HF_HUB_CACHE` are not set explicitly, the app will automatically
 ## Dependency files
 
 - `runtime-requirements.txt` is the actual Docker runtime dependency set used by the app image.
+- It includes the extra V-JEPA2 runtime libraries (`timm`, `einops`) needed for that encoder path to load successfully inside the Space container.
 - Root `requirements.txt` is kept intentionally minimal so Hugging Face Spaces Dev Mode bootstrap layers do not try to reinstall the full CUDA/PyTorch stack outside the Docker image.
 
 ### Per-model overrides
