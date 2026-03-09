@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import shutil
+from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
-from huggingface_hub import hf_hub_download
-from huggingface_hub.utils import EntryNotFoundError
+from huggingface_hub import HfApi, hf_hub_download
+from huggingface_hub.utils import EntryNotFoundError, HfHubHTTPError, RepositoryNotFoundError
 
 APP_ROOT = Path(__file__).resolve().parent
 
@@ -58,6 +59,17 @@ class ModelSpec:
     label: str
     required_files: Tuple[str, ...]
     optional_files: Tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ModelAvailability:
+    model_key: str
+    is_available: bool
+    status: str
+    source: str
+    message: str
+    repo_id: str | None
+    missing_files: Tuple[str, ...] = ()
 
 
 MODEL_SPECS: Dict[str, ModelSpec] = {
@@ -111,6 +123,12 @@ def get_hf_token() -> str | None:
     return os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN") or os.getenv("HUGGINGFACEHUB_API_TOKEN")
 
 
+@lru_cache(maxsize=32)
+def _list_remote_repo_files(repo_id: str, revision: str | None, token: str | None) -> Tuple[str, ...]:
+    api = HfApi(token=token)
+    return tuple(api.list_repo_files(repo_id=repo_id, repo_type="model", revision=revision))
+
+
 def ensure_model_root() -> Path:
     MODEL_ROOT.mkdir(parents=True, exist_ok=True)
     HF_HOME.mkdir(parents=True, exist_ok=True)
@@ -121,6 +139,93 @@ def ensure_model_root() -> Path:
 def _remote_filename(model_key: str, filename: str) -> str:
     subfolder = get_model_subfolder(model_key)
     return f"{subfolder}/{filename}" if subfolder else filename
+
+
+def clear_model_availability_cache() -> None:
+    _list_remote_repo_files.cache_clear()
+
+
+def probe_model_availability(model_key: str) -> ModelAvailability:
+    if model_key not in MODEL_SPECS:
+        raise KeyError(f"Unknown model key: {model_key}")
+
+    spec = MODEL_SPECS[model_key]
+    ensure_model_root()
+    missing_local = tuple(filename for filename in spec.required_files if not (MODEL_ROOT / filename).exists())
+    repo_id = get_model_repo_id(model_key)
+
+    if not missing_local:
+        return ModelAvailability(
+            model_key=model_key,
+            is_available=True,
+            status="ready",
+            source="local",
+            message=f"{spec.label} is ready from the local cache at {MODEL_ROOT}.",
+            repo_id=repo_id,
+        )
+
+    if not repo_id:
+        return ModelAvailability(
+            model_key=model_key,
+            is_available=False,
+            status="missing_repo_config",
+            source="none",
+            message=(
+                f"{spec.label} is unavailable because no model repo is configured. "
+                f"Set {_repo_env_name(model_key)} or PHASE_MODEL_REPO_ID, or copy {', '.join(missing_local)} into {MODEL_ROOT}."
+            ),
+            repo_id=None,
+            missing_files=missing_local,
+        )
+
+    try:
+        remote_files = set(_list_remote_repo_files(repo_id, get_model_revision(model_key), get_hf_token()))
+    except RepositoryNotFoundError:
+        return ModelAvailability(
+            model_key=model_key,
+            is_available=False,
+            status="missing_repo",
+            source="remote",
+            message=f"{spec.label} is unavailable because the model repo {repo_id} was not found.",
+            repo_id=repo_id,
+            missing_files=missing_local,
+        )
+    except HfHubHTTPError as exc:
+        return ModelAvailability(
+            model_key=model_key,
+            is_available=False,
+            status="remote_error",
+            source="remote",
+            message=f"{spec.label} model availability could not be checked against {repo_id}: {exc}",
+            repo_id=repo_id,
+            missing_files=missing_local,
+        )
+
+    missing_remote = tuple(
+        filename for filename in missing_local if _remote_filename(model_key, filename) not in remote_files
+    )
+    if missing_remote:
+        return ModelAvailability(
+            model_key=model_key,
+            is_available=False,
+            status="missing_remote_files",
+            source="remote",
+            message=(
+                f"{spec.label} is unavailable because {repo_id} is missing: {', '.join(missing_remote)}."
+            ),
+            repo_id=repo_id,
+            missing_files=missing_remote,
+        )
+
+    return ModelAvailability(
+        model_key=model_key,
+        is_available=True,
+        status="downloadable",
+        source="remote",
+        message=f"{spec.label} is ready to download from {repo_id}.",
+        repo_id=repo_id,
+        missing_files=(),
+    )
 
 
 def _download_to_model_root(model_key: str, filename: str, *, optional: bool = False) -> Path | None:
@@ -153,6 +258,7 @@ def _download_to_model_root(model_key: str, filename: str, *, optional: bool = F
     downloaded_path = Path(downloaded)
     if downloaded_path.resolve() != target.resolve():
         shutil.copy2(downloaded_path, target)
+    clear_model_availability_cache()
     return target
 
 

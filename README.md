@@ -74,6 +74,7 @@ If a required checkpoint is missing locally, it will try to download it from the
 - The **Projects** page lists the current live workspace plus the next planned portfolio pages.
 - The active model family is selected through a visible **model slider** in the workspace rather than a hidden picker.
 - The Space now keeps a single active predictor loaded at a time and unloads the previous model when the model slider changes.
+- The workspace now performs a per-model artifact preflight so each model reports **ready**, **downloadable on first use**, or **missing artifacts** instead of surfacing raw Hub 404s as a generic load failure.
 - MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
 - `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** and disables file watching / usage telemetry so runtime cache writes do not trigger restart loops.
 - Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.

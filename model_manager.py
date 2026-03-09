@@ -6,7 +6,7 @@ from typing import Any
 
 import torch
 
-from model_registry import ensure_model_artifacts
+from model_registry import clear_model_availability_cache, ensure_model_artifacts, probe_model_availability
 from predictor import MODEL_LABELS, create_predictor, normalize_model_key
 
 
@@ -31,6 +31,7 @@ class SpaceModelManager:
             self.current_predictor = None
 
         self.current_model_key = None
+        self.last_error = None
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -44,6 +45,10 @@ class SpaceModelManager:
         self.last_error = None
 
         try:
+            clear_model_availability_cache()
+            availability = probe_model_availability(normalized_key)
+            if not availability.is_available:
+                raise FileNotFoundError(availability.message)
             model_dir = ensure_model_artifacts(normalized_key)
             predictor = create_predictor(normalized_key, model_dir=str(model_dir))
             predictor.warm_up()

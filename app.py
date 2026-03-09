@@ -16,7 +16,12 @@ from PIL import Image
 
 from explainability import ExplainabilitySpec
 from model_manager import SpaceModelManager
-from model_registry import MODEL_SPECS, get_model_source_summary
+from model_registry import (
+    MODEL_SPECS,
+    clear_model_availability_cache,
+    get_model_source_summary,
+    probe_model_availability,
+)
 from predictor import MODEL_LABELS, PHASE_LABELS, normalize_model_key
 from video_utils import (
     STREAMLIT_SERVER_MAX_UPLOAD_MB,
@@ -206,6 +211,10 @@ def _default_model_key(enabled_model_keys: list[str]) -> str:
     return normalized
 
 
+def _model_availability_map(enabled_model_keys: list[str]) -> dict[str, object]:
+    return {model_key: probe_model_availability(model_key) for model_key in enabled_model_keys}
+
+
 def _space_caption(enabled_model_keys: list[str]) -> str:
     if enabled_model_keys == ["dinov2"]:
         return "Streamlit Hugging Face Space demo for the DINO-Endo phase-recognition stack."
@@ -323,6 +332,9 @@ def _render_hub_chips(labels: list[str] | tuple[str, ...]) -> str:
 def _render_project_hub(enabled_model_keys: list[str]) -> None:
     featured = HOSTED_PROJECTS[0]
     enabled_labels = [_model_option_label(key) for key in enabled_model_keys]
+    availability_map = _model_availability_map(enabled_model_keys)
+    ready_count = sum(1 for availability in availability_map.values() if availability.is_available)
+    blocked_count = len(enabled_model_keys) - ready_count
     st.markdown(
         f"""
         <section class="hub-hero">
@@ -342,9 +354,9 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
 
     metrics = st.columns(4)
     metrics[0].metric("Portfolio pages", len(PORTFOLIO_PAGE_LABELS))
-    metrics[1].metric("Model families", len(enabled_model_keys))
+    metrics[1].metric("Ready models", f"{ready_count}/{len(enabled_model_keys)}")
     metrics[2].metric("Explainability", "Opt-in")
-    metrics[3].metric("Overlay playback", "Built in")
+    metrics[3].metric("Blocked models", blocked_count)
 
     left_col, right_col = st.columns([1.8, 1.2], gap="large")
     with left_col:
@@ -404,6 +416,14 @@ def _render_project_hub(enabled_model_keys: list[str]) -> None:
         mime="application/json",
         use_container_width=True,
     )
+
+    unavailable_keys = [model_key for model_key in enabled_model_keys if not availability_map[model_key].is_available]
+    if unavailable_keys:
+        unavailable_labels = ", ".join(_model_option_label(model_key) for model_key in unavailable_keys)
+        st.warning(
+            f"Some models are not currently loadable in the public Space: {unavailable_labels}. "
+            "Open the workspace page for targeted status details."
+        )
 
 
 def _render_projects_page() -> None:
@@ -472,6 +492,34 @@ def _render_workspace_header(enabled_model_keys: list[str], model_key: str) -> N
         """,
         unsafe_allow_html=True,
     )
+
+
+def _render_model_availability_sidebar(enabled_model_keys: list[str], availability_map: dict[str, object]) -> None:
+    st.sidebar.markdown("### Model availability")
+    if st.sidebar.button("Refresh model status", key="refresh-model-availability", use_container_width=True):
+        clear_model_availability_cache()
+        st.rerun()
+
+    for model_key in enabled_model_keys:
+        availability = availability_map[model_key]
+        label = _model_option_label(model_key)
+        if availability.status == "ready":
+            st.sidebar.success(f"{label}: ready from local cache")
+        elif availability.status == "downloadable":
+            st.sidebar.info(f"{label}: ready to download on first use")
+        else:
+            st.sidebar.warning(f"{label}: unavailable")
+            st.sidebar.caption(availability.message)
+
+
+def _render_unavailable_model_notice(enabled_model_keys: list[str], availability_map: dict[str, object]) -> None:
+    unavailable_keys = [model_key for model_key in enabled_model_keys if not availability_map[model_key].is_available]
+    if not unavailable_keys:
+        return
+
+    for model_key in unavailable_keys:
+        availability = availability_map[model_key]
+        st.warning(f"{_model_option_label(model_key)} is unavailable: {availability.message}")
 
 
 def _resolve_model_selection(enabled_model_keys: list[str], default_model_key: str) -> tuple[str | None, str]:
@@ -901,10 +949,20 @@ def _render_video_results(records, meta):
 def _render_workspace_page(
     enabled_model_keys: list[str], default_model_key: str, manager: SpaceModelManager
 ) -> None:
-    previous_selected_model_key, model_key = _resolve_model_selection(enabled_model_keys, default_model_key)
+    availability_map = _model_availability_map(enabled_model_keys)
+    _render_model_availability_sidebar(enabled_model_keys, availability_map)
+    available_model_keys = [model_key for model_key in enabled_model_keys if availability_map[model_key].is_available]
+    if not available_model_keys:
+        st.error("None of the configured models are currently loadable in this Space.")
+        _render_unavailable_model_notice(enabled_model_keys, availability_map)
+        return
+
+    resolved_default_model_key = default_model_key if default_model_key in available_model_keys else available_model_keys[0]
+    previous_selected_model_key, model_key = _resolve_model_selection(available_model_keys, resolved_default_model_key)
 
     _render_workspace_header(enabled_model_keys, model_key)
     st.caption(_space_caption(enabled_model_keys))
+    _render_unavailable_model_notice(enabled_model_keys, availability_map)
 
     st.session_state[SELECTED_MODEL_STATE_KEY] = model_key
     if previous_selected_model_key is not None and previous_selected_model_key != model_key:
