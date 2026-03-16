@@ -1,5 +1,5 @@
 import torch
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 import cv2
 from PIL import Image
 import ast
@@ -12,18 +12,40 @@ import numpy as np
 
 DEFAULT_REASON_MODEL_NAME = os.environ.get("COSMOS_REASON_MODEL", "nvidia/Cosmos-Reason2-8B")
 
+# Check if INT8 quantization is enabled (for 24GB VRAM optimization)
+USE_INT8 = os.environ.get("COSMOS_USE_INT8", "0") == "1"
+
+# HF Token handling
+HF_TOKEN = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip() or None
+if HF_TOKEN:
+    os.environ["HF_TOKEN"] = HF_TOKEN
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = HF_TOKEN
+
 
 @lru_cache(maxsize=2)
 def get_reason_model_bundle(model_name=DEFAULT_REASON_MODEL_NAME):
     print(f"Loading base Cosmos Reason model: {model_name}")
+    
+    # Configure quantization for 24GB VRAM (INT8 reduces from 20GB to ~10GB)
+    quantization_config = None
+    if USE_INT8:
+        print("   Using INT8 quantization for memory efficiency")
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+        )
+    
     model = Qwen3VLForConditionalGeneration.from_pretrained(
         model_name,
         device_map="auto",
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float16 if not USE_INT8 else torch.float16,
+        quantization_config=quantization_config,
+        token=HF_TOKEN,
     )
     print("Using pretrained checkpoint only; adapter loading is disabled")
-    processor = AutoProcessor.from_pretrained(model_name)
-    print("✅ Fine-tuned model loaded (FP16) on", model.device)
+    processor = AutoProcessor.from_pretrained(model_name, token=HF_TOKEN)
+    quant_str = "INT8 quantized" if USE_INT8 else "FP16"
+    print(f"[OK] Fine-tuned model loaded ({quant_str}) on {model.device}")
     return model_name, model, processor
 
 # System and user prompts for CCTV traffic reasoning
@@ -386,14 +408,17 @@ def generate_reason_response(video_inputs, user_prompt, model_name=None):
     resolved_model_name, model, processor = get_reason_model_bundle(model_name or DEFAULT_REASON_MODEL_NAME)
     content = []
     for video_input in video_inputs:
-        content.append(
-            {
-                "type": "video",
-                "video": video_input["frames"],
-                "fps": float(video_input["fps"]),
-                "max_pixels": 768 * 768,
-            }
-        )
+        # Use image-based approach for reliability (Qwen3-VL video has bugs)
+        frames = video_input.get("frames", [])
+        if frames:
+            # Sample key frames as images
+            sample_indices = [0, len(frames)//4, len(frames)//2, 3*len(frames)//4, len(frames)-1] if len(frames) > 5 else range(len(frames))
+            for idx in sample_indices:
+                if idx < len(frames):
+                    content.append({
+                        "type": "image",
+                        "image": frames[idx],
+                    })
     content.append({"type": "text", "text": user_prompt})
     messages = [
         {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
@@ -405,13 +430,13 @@ def generate_reason_response(video_inputs, user_prompt, model_name=None):
         add_generation_prompt=True,
         return_dict=True,
         return_tensors="pt",
-        add_vision_id=True,
     ).to(model.device)
-    print("Generating risk assessment...")
-    generated = model.generate(
-        **inputs,
-        **GENERATION_CONFIG,
-    )
+    print(f"Generating risk assessment from {len(content)-1} frames...")
+    with torch.inference_mode():
+        generated = model.generate(
+            **inputs,
+            **GENERATION_CONFIG,
+        )
     output = processor.batch_decode(generated, skip_special_tokens=True)[0]
     assistant_part = output.split("assistant")[-1].strip()
     return assistant_part, inputs, generated, {
