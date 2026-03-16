@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from pathlib import Path
@@ -8,11 +9,49 @@ import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Cosmos Sentinel", page_icon="�", layout="wide")
+# Load .env file at startup
+def load_env_file():
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+load_env_file()
+
+st.set_page_config(page_title="Cosmos Sentinel", page_icon="", layout="wide")
 
 PIPELINE_JSON_PREFIX = "PIPELINE_JSON:"
 BADAS_JSON_PREFIX = "BADAS_JSON:"
 REASON_JSON_PREFIX = "REASON_JSON:"
+
+
+@st.cache_data(show_spinner=False)
+def load_video_bytes(video_path, modified_time):
+    with open(video_path, "rb") as file_handle:
+        return file_handle.read()
+
+
+def render_video_path(video_path, container=None):
+    """Render video as base64 data URI in HTML to bypass Streamlit media manager issues."""
+    if not video_path or not os.path.exists(video_path):
+        return False
+    target = container or st
+    video_bytes = load_video_bytes(video_path, os.path.getmtime(video_path))
+    b64 = base64.b64encode(video_bytes).decode()
+    html = f'''
+    <video width="100%" controls style="border-radius:8px;background:#000;">
+        <source src="data:video/mp4;base64,{b64}" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    '''
+    target.markdown(html, unsafe_allow_html=True)
+    return True
+
+
 STEP_PROGRESS = {
     "📍 Step 1": (0.20, "BADAS V-JEPA2 scanning for predictive collisions"),
     "📍 Step 2": (0.40, "Extracting the BADAS-focused evidence clip"),
@@ -373,8 +412,8 @@ def render_predict_panel(predict_payload):
         target_col = rollout_cols[idx] if idx < len(rollout_cols) else st
         with target_col:
             st.markdown(f"#### {mode.replace('_', ' ').title()}")
-            if result.get("output_video"):
-                st.video(result.get("output_video"))
+            if result.get("output_video") and render_video_path(result.get("output_video")):
+                pass
             else:
                 st.info("No rollout generated")
             st.caption(
@@ -385,7 +424,7 @@ def render_predict_panel(predict_payload):
     with st.expander("Predict diagnostics", expanded=False):
         if first_result.get("conditioning_clip"):
             st.markdown("#### Conditioning clip")
-            st.video(first_result.get("conditioning_clip"))
+            render_video_path(first_result.get("conditioning_clip"))
         st.markdown("#### Conditioning metadata")
         st.json(first_result.get("conditioning_metadata") or {})
         if predict_payload.get("fallback_reasons"):
@@ -450,12 +489,26 @@ def summarize_activity_feed(output_text, badas_result, reason_result):
 
 
 def run_pipeline_live(video_path, log_placeholder, activity_placeholder, status_placeholder, progress_placeholder, live_badas_placeholder, live_reason_placeholder):
+    # Set up environment with UTF-8 encoding for subprocess
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    hf_token = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip()
+    if hf_token:
+        env["HF_TOKEN"] = hf_token
+        env["HUGGINGFACE_HUB_TOKEN"] = hf_token
+    else:
+        env.pop("HF_TOKEN", None)
+        env.pop("HUGGINGFACE_HUB_TOKEN", None)
+    
     process = subprocess.Popen(
         [sys.executable, "main_pipeline.py", video_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         cwd=os.getcwd(),
+        env=env,
     )
     output_lines = []
     update_counter = 0
@@ -480,12 +533,12 @@ def run_pipeline_live(video_path, log_placeholder, activity_placeholder, status_
         activity_placeholder.markdown("\n".join([f"- {item}" for item in activity_feed[-6:]]) or "- Waiting for pipeline updates")
         live_badas_chart = make_badas_heatmap(latest_badas)
         if live_badas_chart is not None:
-            live_badas_placeholder.plotly_chart(live_badas_chart, use_container_width=True)
+            live_badas_placeholder.plotly_chart(live_badas_chart, use_container_width=True, key=f"live_badas_chart_{update_counter}")
         else:
             live_badas_placeholder.info("BADAS heatmap will appear as soon as structured detector output is available")
         live_reason_chart = make_reason_coverage_heatmap(latest_reason)
         if live_reason_chart is not None:
-            live_reason_placeholder.plotly_chart(live_reason_chart, use_container_width=True)
+            live_reason_placeholder.plotly_chart(live_reason_chart, use_container_width=True, key=f"live_reason_chart_{update_counter}")
         else:
             live_reason_placeholder.info("Reason sampled-frame coverage map will appear once the narrator emits structured output")
     process.stdout.close()
@@ -595,7 +648,7 @@ with preview_col:
     st.markdown("### Preview")
     preview_video_path = st.session_state.get("input_video_path")
     if preview_video_path and os.path.exists(preview_video_path):
-        st.video(preview_video_path)
+        render_video_path(preview_video_path)
     else:
         st.info("Upload a video or choose the sample clip to preview it here.")
 
@@ -732,7 +785,7 @@ with status_cols[1]:
 main_left, main_right = st.columns([1.2, 0.8], gap="large")
 
 with main_left:
-    st.plotly_chart(make_badas_figure(badas_result), use_container_width=True)
+    st.plotly_chart(make_badas_figure(badas_result), use_container_width=True, key="badas_figure_main")
     render_badas_diagnostics(badas_result)
     render_reason_panel(reason_result)
     render_predict_panel(predict_payload)
@@ -741,8 +794,8 @@ with main_left:
         st.warning(reason_result.get("counterfactual_prompt"))
 
 with main_right:
-    st.plotly_chart(make_risk_gauge(reason_result), use_container_width=True)
-    st.plotly_chart(make_artifact_figure(artifacts), use_container_width=True)
+    st.plotly_chart(make_risk_gauge(reason_result), use_container_width=True, key="risk_gauge_main")
+    st.plotly_chart(make_artifact_figure(artifacts), use_container_width=True, key="artifact_figure_main")
     top_predictions = badas_result.get("top_predictions") or []
     if top_predictions:
         st.markdown("### Peak BADAS frames")
@@ -770,19 +823,19 @@ gallery_tab, logs_tab, raw_tab = st.tabs(["Visual gallery", "Logs", "Raw outputs
 with gallery_tab:
     if artifacts.get("extracted_clip"):
         st.markdown("### BADAS-focused evidence clip")
-        st.video(artifacts.get("extracted_clip"))
+        render_video_path(artifacts.get("extracted_clip"))
     if artifacts.get("predict_conditioning_clip"):
         st.markdown("### Predict conditioning clip")
-        st.video(artifacts.get("predict_conditioning_clip"))
+        render_video_path(artifacts.get("predict_conditioning_clip"))
     predict_video_cols = st.columns(2)
     if artifacts.get("predict_observed_continuation_video"):
         predict_video_cols[0].markdown("### Predict observed rollout")
-        predict_video_cols[0].video(artifacts.get("predict_observed_continuation_video"))
+        render_video_path(artifacts.get("predict_observed_continuation_video"), container=predict_video_cols[0])
     elif (predict_payload.get("results") or {}).get("observed_continuation"):
         predict_video_cols[0].info("Observed rollout not available")
     if artifacts.get("predict_prevented_continuation_video"):
         predict_video_cols[1].markdown("### Predict prevented rollout")
-        predict_video_cols[1].video(artifacts.get("predict_prevented_continuation_video"))
+        render_video_path(artifacts.get("predict_prevented_continuation_video"), container=predict_video_cols[1])
     elif (predict_payload.get("results") or {}).get("prevented_continuation"):
         predict_video_cols[1].info("Prevented rollout not available")
     if artifacts.get("badas_gradient_saliency"):

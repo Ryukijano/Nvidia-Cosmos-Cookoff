@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Pure Cosmos Pipeline: Sequential execution of BADAS detection -> clip extraction -> Reason 2 analysis
+Optimized for 24GB VRAM (RTX 4090) with subprocess isolation and INT8 quantization for Reason2.
 """
 
 import os
@@ -13,10 +14,30 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import cv2
+import gc
+
+# Load environment variables from .env file
+def load_env_file():
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+load_env_file()
 
 # Optimization settings for fast execution
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
+
+# Ensure HF_TOKEN is available for gated models
+HF_TOKEN = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip() or None
+if HF_TOKEN:
+    os.environ["HF_TOKEN"] = HF_TOKEN
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = HF_TOKEN
 
 def extract_structured_json(output, prefix):
     for line in output.splitlines():
@@ -195,15 +216,26 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
     }
 
     # Step 1: BADAS Collision Detection
-    print("\n📍 Step 1: BADAS V-JEPA2 Collision Detection")
+    print("\n[Step 1] BADAS V-JEPA2 Collision Detection")
     badas_result = None
     try:
-        result = subprocess.run([sys.executable, "badas_detector.py", current_video], capture_output=True, text=True, timeout=300)
+        badas_env = os.environ.copy()
+        badas_env["PYTHONIOENCODING"] = "utf-8"  # Fix Unicode emoji encoding on Windows
+        if HF_TOKEN:
+            badas_env["HF_TOKEN"] = HF_TOKEN
+            badas_env["HUGGINGFACE_HUB_TOKEN"] = HF_TOKEN
+        else:
+            badas_env.pop("HF_TOKEN", None)
+            badas_env.pop("HUGGINGFACE_HUB_TOKEN", None)
+        result = subprocess.run(
+            [sys.executable, "badas_detector.py", current_video],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300, env=badas_env
+        )
         if result.returncode == 0:
-            print(result.stdout.strip())
+            print((result.stdout or "").strip())
             alert_time = 5.0
             reason_focus_time = 5.0
-            badas_result = extract_structured_json(result.stdout, "BADAS_JSON:")
+            badas_result = extract_structured_json(result.stdout or "", "BADAS_JSON:")
             if badas_result is not None:
                 alert_time = float(badas_result.get("alert_time", alert_time))
                 reason_focus_time = select_reason_focus_time(badas_result)
@@ -229,17 +261,17 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
                 "alert_time": alert_time,
                 "reason_focus_time": reason_focus_time,
                 "result": badas_result,
-                "stdout": result.stdout,
+                "stdout": result.stdout or "",
             }
         else:
-            print(f"❌ BADAS failed: {result.stderr}")
+            print(f"❌ BADAS failed: {result.stderr or result.stdout or 'Unknown BADAS error'}")
             alert_time = 5.0
             reason_focus_time = alert_time
             iteration_summary["steps"]["badas"] = {
                 "success": False,
                 "alert_time": alert_time,
                 "reason_focus_time": reason_focus_time,
-                "stderr": result.stderr,
+                "stderr": result.stderr or result.stdout or "",
             }
     except Exception as e:
         print(f"❌ BADAS error: {e}, using default alert time")
@@ -278,16 +310,28 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
         print(f"PIPELINE_JSON: {json.dumps(pipeline_summary)}")
         return pipeline_summary
 
-    # Step 3: Reason 2 Analysis
+    # Step 3: Reason 2 Analysis (with INT8 quantization for 24GB VRAM)
     print("\n📍 Step 3: Cosmos Reason 2 Risk Analysis")
+    print("   Using INT8 quantization to fit in 24GB VRAM")
     reason_payload = None
     reason_text = ""
     try:
         reason_env = os.environ.copy()
         reason_env["COSMOS_BADAS_CONTEXT"] = json.dumps(badas_result or {})
-        result = subprocess.run([sys.executable, "cosmos_risk_narrator.py", current_video, extracted_clip], capture_output=True, text=True, timeout=300, env=reason_env)
+        if HF_TOKEN:
+            reason_env["HF_TOKEN"] = HF_TOKEN
+            reason_env["HUGGINGFACE_HUB_TOKEN"] = HF_TOKEN
+        else:
+            reason_env.pop("HF_TOKEN", None)
+            reason_env.pop("HUGGINGFACE_HUB_TOKEN", None)
+        reason_env["COSMOS_USE_INT8"] = "1"  # Enable INT8 quantization
+        reason_env["PYTHONIOENCODING"] = "utf-8"
+        result = subprocess.run(
+            [sys.executable, "cosmos_risk_narrator.py", current_video, extracted_clip],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600, env=reason_env
+        )
         if result.returncode == 0:
-            output = result.stdout
+            output = result.stdout or ""
             print(output.strip())
             print("✅ Reason 2 analysis completed")
             reason_payload = extract_structured_json(output, "REASON_JSON:")
@@ -327,12 +371,12 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
                 "visualizations": visualizations,
             }
         else:
-            print(f"❌ Reason 2 failed: {result.stderr}")
+            print(f"❌ Reason 2 failed: {result.stderr or result.stdout or 'Unknown Reason 2 error'}")
             iteration_summary["steps"]["reason"] = {
                 "success": False,
                 "full_video_input": current_video,
                 "focus_clip_input": existing_file(extracted_clip),
-                "stderr": result.stderr,
+                "stderr": result.stderr or result.stdout or "",
                 "result": None,
                 "text": "",
                 "visualizations": {},

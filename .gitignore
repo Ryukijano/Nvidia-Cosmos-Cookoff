@@ -54,3 +54,9 @@ temp_*.py
 Fine-tune Cosmos Reason 2.md
 Integrate Cosmos Predict.md
 Moura_Nexar_Dashcam_Collision_Prediction_Dataset_and_Challenge_CVPRW_2025_paper.pdf
+
+# Local media inputs
+videos/
+
+# Demo scripts with secrets
+Demo Script Divergence.md

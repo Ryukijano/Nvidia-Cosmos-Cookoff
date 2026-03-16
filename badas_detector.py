@@ -6,7 +6,7 @@ import json
 import numpy as np
 from functools import lru_cache
 
-hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+hf_token = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip() or None
 if hf_token and "HF_TOKEN" not in os.environ:
     os.environ["HF_TOKEN"] = hf_token
 
