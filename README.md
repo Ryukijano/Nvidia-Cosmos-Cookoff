@@ -27,7 +27,7 @@ graph TD
     H -->|Yes| I[NVIDIA Cosmos Predict 2.5 2B]
     I -->|Prompt: Prevented Collision| J[Counterfactual Video]
     I -->|Prompt: Observed Trajectory| K[Continuation Video]
-    G --> L[Gradio / Streamlit UI Dashboard]
+    G --> L[Streamlit UI Dashboard]
     J --> L
     K --> L
 ```
@@ -35,21 +35,15 @@ graph TD
 ## 🚀 Features
 
 - **End-to-End Pipeline:** Fully orchestrated from raw MP4 video to intelligent analysis and generated video continuations.
-- **Dual UI Support:** 
-  - **Streamlit App:** A rich local dashboard for debugging, visualizing timelines, and reviewing logs.
-  - **Gradio App:** An optimized interface deployed to Hugging Face Spaces with ZeroGPU support and intelligent model caching.
+- **Streamlit Dashboard:** A rich local dashboard for debugging, visualizing timelines, and reviewing logs.
 - **Visual Diagnostics:** Generates gradient saliency maps, bounding box overlays, risk gauges, and artifact heatmaps dynamically.
 
 ## 📂 Repository Structure
 
 ```text
 .
-├── demo_streamlit.py         # Primary Streamlit local dashboard
-├── demo_app.py               # Legacy Gradio wrapper
-├── hf_space_repo/            # Source code deployed to the Hugging Face Space
-│   ├── app.py                # Gradio UI for Hugging Face
-│   ├── space_backend.py      # Space-specific pipeline orchestration
-│   └── ...                   # Vendored models for the space
+├── demo_streamlit.py         # Streamlit local dashboard
+├── main.py                   # Entry point (launches Streamlit)
 ├── badas_detector.py         # BADAS model loading and sliding-window inference
 ├── cosmos_risk_narrator.py   # Cosmos Reason 2 prompt building and inference
 ├── cosmos_predict_runner.py  # Cosmos Predict 2.5 generation logic
@@ -70,8 +64,7 @@ graph TD
 You need to install the dependencies for both the pipeline and the vendored Cosmos Predict package.
 
 ```bash
-# Core dependencies
-pip install torch torchvision transformers huggingface_hub opencv-python numpy pillow albumentations gradio streamlit plotly pandas
+pip install -r requirements.txt
 ```
 
 *Note: If you want to use the Cosmos Predict module locally, you must follow the [Cosmos Predict 2.5 Setup Guide](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/README.md) to install its specific `uv` workspace dependencies.*
@@ -92,14 +85,9 @@ export HF_HOME="/path/to/your/large/storage/.huggingface"
 streamlit run demo_streamlit.py
 ```
 
-## ☁️ Hugging Face Space Deployment
+## ☁️ Hugging Face Space
 
-The `hf_space_repo/` directory contains the exact codebase deployed to [Cosmos Sentinel on Hugging Face Spaces](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel).
-
-It is optimized for:
-- **ZeroGPU:** Dynamic `@spaces.GPU` allocation to prevent timeouts during long downloads.
-- **Persistent Storage:** Reads `HF_HOME=/data/.huggingface` to cache the 30GB+ of models across restarts.
-- **Graceful Degradation:** Skips Cosmos Predict locally in the Space to avoid complex workspace dependency issues, focusing purely on the core BADAS + Reason pipeline.
+A Gradio-based version of this app is available on the `huggingface-spaces` branch and deployed to [Cosmos Sentinel on Hugging Face Spaces](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel).
 
 ## 📚 Acknowledgements & References
 

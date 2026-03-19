@@ -2,7 +2,7 @@
 # Cosmos Sentinel - Comprehensive Requirements
 # ========================================
 # This file includes all dependencies for the BADAS + Cosmos Reason 2 + Cosmos Predict 2.5 pipeline
-# and both Streamlit and Gradio UIs. Includes CUDA versions of PyTorch for GPU acceleration.
+# and the Streamlit UI. Includes CUDA versions of PyTorch for GPU acceleration.
 
 # ========================================
 # PyTorch with CUDA Support
@@ -27,11 +27,6 @@ safetensors>=0.4.0
 # Streamlit UI
 # ========================================
 streamlit>=1.28.0
-
-# ========================================
-# Gradio UI
-# ========================================
-gradio>=4.0.0
 
 # ========================================
 # Data Processing & Visualization
