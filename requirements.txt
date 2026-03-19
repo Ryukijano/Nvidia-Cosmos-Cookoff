@@ -2,7 +2,7 @@
 # Cosmos Sentinel - Comprehensive Requirements
 # ========================================
 # This file includes all dependencies for the BADAS + Cosmos Reason 2 + Cosmos Predict 2.5 pipeline
-# and both Streamlit and Gradio UIs. Includes CUDA versions of PyTorch for GPU acceleration.
+# and the Gradio UI for Hugging Face Spaces. Includes CUDA versions of PyTorch for GPU acceleration.
 
 # ========================================
 # PyTorch with CUDA Support (CUDA 12.6 for Ampere+ GPUs)
@@ -23,12 +23,7 @@ accelerate>=0.27.0
 huggingface_hub>=0.20.0
 
 # ========================================
-# Streamlit UI
-# ========================================
-streamlit>=1.28.0
-
-# ========================================
-# Gradio UI
+# Gradio UI (Hugging Face Spaces)
 # ========================================
 gradio>=4.0.0
 
@@ -36,8 +31,6 @@ gradio>=4.0.0
 # Data Processing & Visualization
 # ========================================
 numpy>=1.24.0
-pandas>=2.0.0
-plotly>=5.18.0
 matplotlib>=3.8.0
 
 # ========================================
