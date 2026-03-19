@@ -782,6 +782,26 @@ with status_cols[1]:
         severity_accent,
     )
 
+badas_timing = badas_step.get("timing") or {}
+if badas_timing:
+    perf_cols = st.columns(2, gap="medium")
+    with perf_cols[0]:
+        duration_val = badas_timing.get("duration_sec")
+        render_card(
+            "BADAS latency",
+            f"{duration_val:.2f}s" if isinstance(duration_val, (int, float)) else "N/A",
+            "Wall-clock time for BADAS subprocess",
+            "#38bdf8",
+        )
+    with perf_cols[1]:
+        throughput_val = badas_timing.get("predictions_per_sec")
+        render_card(
+            "BADAS throughput",
+            f"{throughput_val:.1f} pred/s" if isinstance(throughput_val, (int, float)) else "N/A",
+            "Predictions per second",
+            "#a855f7",
+        )
+
 main_left, main_right = st.columns([1.2, 0.8], gap="large")
 
 with main_left:

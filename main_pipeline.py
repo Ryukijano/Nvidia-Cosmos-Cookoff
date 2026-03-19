@@ -10,6 +10,7 @@ import subprocess
 import json
 import re
 import ast
+import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -218,6 +219,7 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
     # Step 1: BADAS Collision Detection
     print("\n[Step 1] BADAS V-JEPA2 Collision Detection")
     badas_result = None
+    badas_start = time.time()
     try:
         badas_env = os.environ.copy()
         badas_env["PYTHONIOENCODING"] = "utf-8"  # Fix Unicode emoji encoding on Windows
@@ -256,32 +258,49 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
             else:
                 print("⚠️ BADAS completed but no structured payload was found, using default alert time")
                 reason_focus_time = alert_time
+            badas_duration = time.time() - badas_start
+            badas_pred_count = (badas_result or {}).get("valid_prediction_count") or 0
+            badas_throughput = float(badas_pred_count) / badas_duration if badas_duration > 0 and badas_pred_count else None
             iteration_summary["steps"]["badas"] = {
                 "success": True,
                 "alert_time": alert_time,
                 "reason_focus_time": reason_focus_time,
                 "result": badas_result,
                 "stdout": result.stdout or "",
+                "timing": {
+                    "duration_sec": badas_duration,
+                    "predictions_per_sec": badas_throughput,
+                },
             }
         else:
             print(f"❌ BADAS failed: {result.stderr or result.stdout or 'Unknown BADAS error'}")
             alert_time = 5.0
             reason_focus_time = alert_time
+            badas_duration = time.time() - badas_start
             iteration_summary["steps"]["badas"] = {
                 "success": False,
                 "alert_time": alert_time,
                 "reason_focus_time": reason_focus_time,
                 "stderr": result.stderr or result.stdout or "",
+                "timing": {
+                    "duration_sec": badas_duration,
+                    "predictions_per_sec": None,
+                },
             }
     except Exception as e:
         print(f"❌ BADAS error: {e}, using default alert time")
         alert_time = 5.0
         reason_focus_time = alert_time
+        badas_duration = time.time() - badas_start
         iteration_summary["steps"]["badas"] = {
             "success": False,
             "alert_time": alert_time,
             "reason_focus_time": reason_focus_time,
             "error": str(e),
+            "timing": {
+                "duration_sec": badas_duration,
+                "predictions_per_sec": None,
+            },
         }
 
     # Step 2: Extract Pre-Alert Clip
@@ -307,6 +326,13 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
         }
         pipeline_summary["iterations"].append(iteration_summary)
         pipeline_summary["status"] = "failed"
+        badas_timing = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}).get("badas", {}).get("timing") or {})
+        pipeline_summary["timing"] = {
+            "total_duration_sec": time.time() - badas_start,
+            "stages": {
+                "badas": badas_timing.get("duration_sec", 0.0),
+            },
+        }
         print(f"PIPELINE_JSON: {json.dumps(pipeline_summary)}")
         return pipeline_summary
 
@@ -411,6 +437,13 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
         "reason_frame_strip": existing_file(last_visualizations.get("reason_frame_strip")),
     }
     pipeline_summary["status"] = "completed"
+    badas_timing = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}).get("badas", {}).get("timing") or {})
+    pipeline_summary["timing"] = {
+        "total_duration_sec": time.time() - badas_start,
+        "stages": {
+            "badas": badas_timing.get("duration_sec", 0.0),
+        },
+    }
     print(f"PIPELINE_JSON: {json.dumps(pipeline_summary)}")
     return pipeline_summary
 
