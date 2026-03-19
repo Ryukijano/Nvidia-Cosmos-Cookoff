@@ -306,32 +306,48 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
     # Step 2: Extract Pre-Alert Clip
     print("\n📍 Step 2: Extracting Pre-Alert Clip")
     extracted_clip = "./extracted_clip.mp4"
+    clip_extract_start = time.time()
     try:
         from extract_clip import extract_pre_alert_clip
         extract_pre_alert_clip(current_video, reason_focus_time, extracted_clip)
+        clip_extract_duration = time.time() - clip_extract_start
+        clip_duration_sec = min(reason_focus_time, 8.0) + 3.0
+        clip_realtime_factor = clip_duration_sec / clip_extract_duration if clip_extract_duration > 0 else None
         print("✅ Clip extracted successfully")
         iteration_summary["steps"]["clip_extraction"] = {
             "success": True,
             "clip_path": existing_file(extracted_clip),
             "alert_time": alert_time,
             "reason_focus_time": reason_focus_time,
+            "timing": {
+                "duration_sec": clip_extract_duration,
+                "realtime_factor": clip_realtime_factor,
+            },
         }
     except Exception as e:
+        clip_extract_duration = time.time() - clip_extract_start
         print(f"❌ Clip extraction failed: {e}")
         iteration_summary["steps"]["clip_extraction"] = {
             "success": False,
             "clip_path": None,
             "reason_focus_time": reason_focus_time,
             "error": str(e),
+            "timing": {
+                "duration_sec": clip_extract_duration,
+                "realtime_factor": None,
+            },
         }
         pipeline_summary["iterations"].append(iteration_summary)
         pipeline_summary["status"] = "failed"
-        badas_timing = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}).get("badas", {}).get("timing") or {})
+        last_steps = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}))
+        badas_dur = (last_steps.get("badas", {}).get("timing") or {}).get("duration_sec", 0.0)
+        clip_dur = (last_steps.get("clip_extraction", {}).get("timing") or {}).get("duration_sec", 0.0)
+        stages = {"badas": badas_dur}
+        if clip_dur:
+            stages["clip_extraction"] = clip_dur
         pipeline_summary["timing"] = {
-            "total_duration_sec": time.time() - badas_start,
-            "stages": {
-                "badas": badas_timing.get("duration_sec", 0.0),
-            },
+            "total_duration_sec": sum(stages.values()),
+            "stages": stages,
         }
         print(f"PIPELINE_JSON: {json.dumps(pipeline_summary)}")
         return pipeline_summary
@@ -437,12 +453,15 @@ def run_pipeline(video_path="./nexar_data/sample_videos/traffic_0.mp4"):
         "reason_frame_strip": existing_file(last_visualizations.get("reason_frame_strip")),
     }
     pipeline_summary["status"] = "completed"
-    badas_timing = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}).get("badas", {}).get("timing") or {})
+    last_steps = ((pipeline_summary.get("iterations") or [{}])[-1].get("steps", {}))
+    badas_dur = (last_steps.get("badas", {}).get("timing") or {}).get("duration_sec", 0.0)
+    clip_dur = (last_steps.get("clip_extraction", {}).get("timing") or {}).get("duration_sec", 0.0)
+    stages = {"badas": badas_dur}
+    if clip_dur:
+        stages["clip_extraction"] = clip_dur
     pipeline_summary["timing"] = {
-        "total_duration_sec": time.time() - badas_start,
-        "stages": {
-            "badas": badas_timing.get("duration_sec", 0.0),
-        },
+        "total_duration_sec": sum(stages.values()),
+        "stages": stages,
     }
     print(f"PIPELINE_JSON: {json.dumps(pipeline_summary)}")
     return pipeline_summary

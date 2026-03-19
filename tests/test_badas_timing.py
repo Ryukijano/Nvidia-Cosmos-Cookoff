@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 # Ensure the project root is on sys.path
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Stub out heavy dependencies that aren't available in the test environment
 for _mod_name in ["torch", "cv2", "matplotlib", "matplotlib.pyplot", "numpy", "imageio"]:

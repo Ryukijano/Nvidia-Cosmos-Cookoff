@@ -802,6 +802,27 @@ if badas_timing:
             "#a855f7",
         )
 
+clip_step = steps.get("clip_extraction", {})
+clip_timing = clip_step.get("timing") or {}
+if clip_timing:
+    clip_perf_cols = st.columns(2, gap="medium")
+    with clip_perf_cols[0]:
+        clip_duration_val = clip_timing.get("duration_sec")
+        render_card(
+            "Clip extraction latency",
+            f"{clip_duration_val:.2f}s" if isinstance(clip_duration_val, (int, float)) else "N/A",
+            "Wall-clock time for clip extraction",
+            "#38bdf8",
+        )
+    with clip_perf_cols[1]:
+        clip_rt_val = clip_timing.get("realtime_factor")
+        render_card(
+            "Clip extraction realtime factor",
+            f"{clip_rt_val:.1f}x" if isinstance(clip_rt_val, (int, float)) else "N/A",
+            "Clip duration / extraction time",
+            "#a855f7",
+        )
+
 main_left, main_right = st.columns([1.2, 0.8], gap="large")
 
 with main_left:
