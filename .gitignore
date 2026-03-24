@@ -2,3 +2,4 @@
 __pycache__/
 *.pyc
 surface_code_in_stem/dont_look/
+surface_code_in_stem/*.ipynb
