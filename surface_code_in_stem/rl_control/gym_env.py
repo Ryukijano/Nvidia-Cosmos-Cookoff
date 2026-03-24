@@ -14,8 +14,12 @@ Mathematical formulation:
 
 from __future__ import annotations
 
-import gym
-from gym import spaces
+try:
+    import gym
+    from gym import spaces
+except ModuleNotFoundError:
+    import gymnasium as gym
+    from gymnasium import spaces
 import numpy as np
 from typing import Any, Dict, Optional, Tuple
 

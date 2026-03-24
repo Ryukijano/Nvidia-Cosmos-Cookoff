@@ -7,17 +7,191 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import stim
-import torch
-from surface_code_in_stem.rl_control.environment import QECEnvConfig, qec_environment
-from surface_code_in_stem.rl_control.sota_agents import RLAlgorithms, training_loop
-from surface_code_in_stem.surface_code import SurfaceCode
+from surface_code_in_stem.surface_code import surface_code_circuit_string
+
+try:
+    import stim
+except ModuleNotFoundError:
+    stim = None
+
+try:
+    import torch
+except ModuleNotFoundError:
+    torch = None
+
+_SYNDROME_IMPORT_ERRORS: list[str] = []
+
+try:
+    from surface_code_in_stem.rl_control.gym_env import QECContinuousControlEnv, QECGymEnv
+except Exception as exc:
+    QECContinuousControlEnv = None
+    QECGymEnv = None
+    _SYNDROME_IMPORT_ERRORS.append(f"rl_control.gym_env: {exc}")
+
+try:
+    from surface_code_in_stem.rl_control.replay_buffer import Experience, ReplayBuffer
+    from surface_code_in_stem.rl_control.sota_agents import ContinuousSACAgent, PPOAgent
+except Exception as exc:
+    Experience = None
+    ReplayBuffer = None
+    ContinuousSACAgent = None
+    PPOAgent = None
+    _SYNDROME_IMPORT_ERRORS.append(f"rl_control agents/buffer: {exc}")
+
+
+def _missing_syndrome_dependencies() -> list[str]:
+    missing: list[str] = []
+    if stim is None:
+        missing.append("stim")
+    if torch is None:
+        missing.append("torch")
+    if QECGymEnv is None or QECContinuousControlEnv is None:
+        missing.append("surface_code_in_stem.rl_control.gym_env")
+    if ReplayBuffer is None or Experience is None or PPOAgent is None or ContinuousSACAgent is None:
+        missing.append("surface_code_in_stem.rl_control.replay_buffer / sota_agents")
+    missing.extend(_SYNDROME_IMPORT_ERRORS)
+    return missing
+
+
+@dataclass(frozen=True)
+class QECEnvConfig:
+    distance: int = 5
+    rounds: int = 10
+    noise: float = 0.001
+
+
+class RLAlgorithms(str, Enum):
+    PPO = "PPO"
+    SAC = "SAC"
+
+
+class SurfaceCode:
+    def __init__(self, distance: int, rounds: int, noise: float, basis: str = "Z", local: bool = False):
+        if stim is None:
+            raise ImportError("stim is required for surface code circuit generation")
+        _ = (basis, local)
+        circuit_text = surface_code_circuit_string(distance=distance, rounds=rounds, p=float(noise))
+        self.circuit = stim.Circuit(circuit_text)
+
+
+def _train_ppo_decoder(env_config: QECEnvConfig, total_steps: int, seed: int, callback=None):
+    missing = _missing_syndrome_dependencies()
+    if missing:
+        raise ImportError("Missing Syndrome-Net dependencies: " + ", ".join(missing))
+    env = QECGymEnv(
+        distance=env_config.distance,
+        rounds=env_config.rounds,
+        physical_error_rate=env_config.noise,
+        seed=seed,
+    )
+    state, _ = env.reset(seed=seed)
+    state = np.asarray(state, dtype=np.float32)
+    state_dim = int(state.size)
+    action_dim = int(getattr(env, "num_observables", 1))
+    agent = PPOAgent(state_dim=state_dim, action_dim=action_dim, device="cpu")
+    history = []
+
+    for step in range(1, int(total_steps) + 1):
+        action, log_prob, value = agent.select_action(state)
+        _, reward, _, _, _ = env.step(action)
+
+        returns = torch.tensor([float(reward)], dtype=torch.float32)
+        advantages = returns - torch.tensor([float(value)], dtype=torch.float32)
+        loss_dict = agent.update(
+            torch.FloatTensor(state).unsqueeze(0),
+            torch.FloatTensor(action).unsqueeze(0),
+            torch.tensor([float(log_prob)], dtype=torch.float32),
+            returns,
+            advantages,
+        )
+        loss_value = float(loss_dict.get("policy_loss", 0.0) + loss_dict.get("value_loss", 0.0))
+        history.append(loss_value)
+        if callback is not None:
+            callback(step, int(total_steps), {"loss": loss_value, "reward": float(reward)})
+
+        state, _ = env.reset()
+        state = np.asarray(state, dtype=np.float32)
+
+    return agent, history
+
+
+def _train_sac_controller(env_config: QECEnvConfig, total_steps: int, seed: int, callback=None):
+    missing = _missing_syndrome_dependencies()
+    if missing:
+        raise ImportError("Missing Syndrome-Net dependencies: " + ", ".join(missing))
+    env = QECContinuousControlEnv(
+        distance=env_config.distance,
+        rounds=env_config.rounds,
+        base_error_rate=env_config.noise,
+        seed=seed,
+    )
+    state, _ = env.reset(seed=seed)
+    state = np.asarray(state, dtype=np.float32)
+    state_dim = int(state.size)
+    action_dim = int(np.prod(env.action_space.shape))
+    agent = ContinuousSACAgent(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        action_space=env.action_space,
+        device="cpu",
+    )
+    replay = ReplayBuffer(capacity=10000, prioritized=False)
+    batch_size = 32
+    history = []
+
+    for step in range(1, int(total_steps) + 1):
+        action = agent.select_action(state)
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        next_state = np.asarray(next_state, dtype=np.float32)
+        done = bool(terminated or truncated)
+
+        replay.push(
+            Experience(
+                state=torch.FloatTensor(state),
+                action=torch.FloatTensor(np.asarray(action, dtype=np.float32)),
+                reward=float(reward),
+                next_state=torch.FloatTensor(next_state),
+                done=done,
+            )
+        )
+
+        loss_value = float(reward)
+        if replay.is_ready(batch_size):
+            s_batch, a_batch, r_batch, next_s_batch, d_batch, _, _ = replay.sample(batch_size)
+            loss_dict = agent.update_parameters(
+                s_batch,
+                a_batch.float(),
+                r_batch,
+                next_s_batch,
+                1.0 - d_batch.float(),
+            )
+            loss_value = float(loss_dict.get("policy_loss", loss_value))
+
+        history.append(loss_value)
+        if callback is not None:
+            callback(step, int(total_steps), {"loss": loss_value, "reward": float(reward)})
+
+        if done:
+            state, _ = env.reset()
+            state = np.asarray(state, dtype=np.float32)
+        else:
+            state = next_state
+
+    return agent, history
+
+
+def training_loop(algo: RLAlgorithms, env_config: QECEnvConfig, total_steps: int, seed: int, callback=None):
+    if algo == RLAlgorithms.PPO:
+        return _train_ppo_decoder(env_config, total_steps, seed, callback=callback)
+    return _train_sac_controller(env_config, total_steps, seed, callback=callback)
 
 
 def _get_circuit(distance: int, rounds: int, noise: float, basis: str, local: bool = False):
@@ -36,6 +210,23 @@ def _get_circuit(distance: int, rounds: int, noise: float, basis: str, local: bo
 
 
 def _render_syndrome_net_page():
+    missing_deps = _missing_syndrome_dependencies()
+    if missing_deps:
+        st.markdown(
+            """
+            <section class="workspace-card">
+                <p class="hub-eyebrow">Quantum Error Correction</p>
+                <h2>Syndrome-Net QEC Lab</h2>
+                <p class="workspace-copy">
+                    Syndrome-Net dependencies are missing in this runtime. Install the required packages and rebuild to enable this page.
+                </p>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.error("Missing dependencies: " + " | ".join(missing_deps))
+        return
+
     st.markdown("""
     <section class="workspace-card">
         <p class="hub-eyebrow">Quantum Error Correction</p>
@@ -128,7 +319,11 @@ def _render_syndrome_net_page():
                 def progress_callback(step, total, metrics):
                     progress = min(step / total, 1.0)
                     progress_bar.progress(progress)
-                    status_text.text(f"Step {step}/{total} | Loss: {metrics.get('loss', 'N/A'):.4f}")
+                    loss_value = metrics.get("loss")
+                    if loss_value is None:
+                        status_text.text(f"Step {step}/{total} | Loss: N/A")
+                    else:
+                        status_text.text(f"Step {step}/{total} | Loss: {float(loss_value):.4f}")
 
                 # Create environment
                 env_config = QECEnvConfig(

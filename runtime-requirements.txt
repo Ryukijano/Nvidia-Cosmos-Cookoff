@@ -25,6 +25,7 @@ torchaudio
 
 # Syndrome-Net dependencies
 stim>=1.14,<2
+gymnasium>=0.29,<1
 tensorboard>=2.17,<3
 wandb>=0.18,<1
 

@@ -41,6 +41,31 @@ class StimCalibrationConfig:
     seed: int = 0
 
 
+@dataclass(frozen=True)
+class QECEnvConfig:
+    """Backward-compatible config used by the Streamlit Syndrome-Net page."""
+
+    distance: int = 3
+    rounds: int = 3
+    noise: float = 0.001
+    shots: int = 128
+    seed: int = 0
+    parameter_dim: int = 4
+
+
+def qec_environment(config: QECEnvConfig) -> "StimCalibrationEnvironment":
+    """Create a Stim calibration environment from legacy QEC config."""
+
+    stim_config = StimCalibrationConfig(
+        distance=config.distance,
+        rounds=config.rounds,
+        shots=config.shots,
+        base_error_rate=config.noise,
+        seed=config.seed,
+    )
+    return StimCalibrationEnvironment(stim_config, parameter_dim=config.parameter_dim)
+
+
 class StimCalibrationEnvironment:
     """Stim-backed environment for policy calibration.
 

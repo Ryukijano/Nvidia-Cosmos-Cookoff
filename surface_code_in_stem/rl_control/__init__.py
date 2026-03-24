@@ -3,8 +3,10 @@
 from .environment import (
     ControlEnvironment,
     HardwareTraceAdapter,
+    QECEnvConfig,
     StimCalibrationConfig,
     StimCalibrationEnvironment,
+    qec_environment,
 )
 from .masking import (
     apply_masked_detector_weights,
@@ -18,8 +20,10 @@ from .training import TrainingConfig, run_simulator_training
 __all__ = [
     "ControlEnvironment",
     "HardwareTraceAdapter",
+    "QECEnvConfig",
     "StimCalibrationConfig",
     "StimCalibrationEnvironment",
+    "qec_environment",
     "PEPGOptimizer",
     "TrainingConfig",
     "run_simulator_training",
