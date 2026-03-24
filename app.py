@@ -37,6 +37,8 @@ from video_utils import (
     spool_uploaded_video,
     transcode_video_for_streamlit,
 )
+from cosmos_sentinel_page import _render_cosmos_sentinel_page
+from syndrome_net_page import _render_syndrome_net_page
 
 st.set_page_config(page_title="Ryukijano's Project Portfolio", layout="wide")
 
@@ -87,12 +89,16 @@ VIDEO_ANALYSIS_STATE_KEY = "video-analysis-state"
 PORTFOLIO_PAGE_LABELS = {
     "home": "Home",
     "workspace": "DINO-Endo Surgery",
+    "cosmos_sentinel": "Cosmos Sentinel",
+    "syndrome_net": "Syndrome-Net QEC",
     "projects": "Projects",
 }
 PORTFOLIO_PAGE_SUMMARIES = {
     "home": "Landing page for Ryukijano's Project Portfolio and the featured hosted work.",
     "workspace": "Dedicated Dino-Endo Surgery workspace with model controls, explainability, and annotated video playback.",
-    "projects": "Project index for the current live workspace and the next portfolio pages to add.",
+    "cosmos_sentinel": "Traffic safety AI pipeline with BADAS collision detection, Cosmos Reason narration, and Predict counterfactuals.",
+    "syndrome_net": "Quantum Error Correction Lab with surface code circuits, RL decoders, and threshold exploration.",
+    "projects": "Project index for all live workspaces and upcoming portfolio pages.",
 }
 
 
@@ -122,6 +128,38 @@ HOSTED_PROJECTS = (
             "Manual load and unload for GPU-safe model switching",
         ),
         tags=("Computer vision", "Medical video", "Multi-model inference"),
+    ),
+    HostedProject(
+        key="cosmos-sentinel",
+        title="Cosmos Sentinel Traffic Safety",
+        status="Live now",
+        summary=(
+            "BADAS V-JEPA2 collision detection, Cosmos Reason 2 incident narration, and optional "
+            "Cosmos Predict 2.5 counterfactual video generation for traffic safety analysis."
+        ),
+        highlights=(
+            "BADAS predictive collision gating with gradient saliency",
+            "Cosmos Reason 2 multi-modal risk narration",
+            "Prevented vs observed continuation rollouts",
+            "JSON payload export with full provenance",
+        ),
+        tags=("Autonomous driving", "Video understanding", "Generative AI", "Safety"),
+    ),
+    HostedProject(
+        key="syndrome-net",
+        title="Syndrome-Net QEC Lab",
+        status="Live now",
+        summary=(
+            "Quantum Error Correction framework with surface code circuit generation, "
+            "RL-based decoders (PPO/SAC), and threshold exploration tools."
+        ),
+        highlights=(
+            "Stim circuit generation with noise models",
+            "Transformer-PPO and SAC calibration agents",
+            "Threshold sweep with MWPM and Union-Find decoders",
+            "Teraquop footprint estimator for physical qubits",
+        ),
+        tags=("Quantum computing", "Reinforcement learning", "Error correction", "Stim"),
     ),
 )
 
@@ -225,99 +263,187 @@ def _inject_app_styles() -> None:
     st.markdown(
         """
         <style>
+        /* Import a nice font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        /* Base Streamlit overrides */
         .block-container {
             padding-top: 2.4rem;
-            padding-bottom: 2rem;
+            padding-bottom: 3rem;
+            max-width: 1400px;
+            font-family: 'Inter', sans-serif;
         }
 
+        /* Hide Streamlit branding */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+
+        /* Modern Card Styling with Glassmorphism */
         .hub-hero,
         .hub-card,
         .workspace-card {
-            border-radius: 22px;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            background: linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.66));
-            box-shadow: 0 20px 45px rgba(15, 23, 42, 0.18);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.7) 100%);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .hub-card:hover, .workspace-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        /* Hero Section with animated gradient */
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
 
         .hub-hero {
-            padding: 2rem 2.25rem;
-            margin-bottom: 1rem;
-            background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(16, 185, 129, 0.18), rgba(15, 23, 42, 0.9));
+            padding: 3rem;
+            margin-bottom: 2rem;
+            background: linear-gradient(-45deg, rgba(14, 165, 233, 0.15), rgba(139, 92, 246, 0.15), rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.95));
+            background-size: 300% 300%;
+            animation: gradientBG 15s ease infinite;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hub-hero::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at top right, rgba(14, 165, 233, 0.1), transparent 40%);
+            pointer-events: none;
         }
 
         .hub-eyebrow {
-            margin: 0;
-            color: #67e8f9;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.18em;
+            margin: 0 0 0.5rem 0;
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 0.85rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
             text-transform: uppercase;
         }
 
-        .hub-hero h1,
-        .workspace-card h2,
-        .hub-card h3 {
-            margin: 0.4rem 0 0 0;
-            color: #f8fafc;
+        .hub-hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin: 0;
+            color: #ffffff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
         }
 
-        .hub-subtitle,
-        .workspace-copy,
-        .hub-card p,
-        .hub-card li {
-            color: rgba(226, 232, 240, 0.92);
-            line-height: 1.55;
+        .workspace-card h2,
+        .hub-card h3 {
+            margin: 0.5rem 0 0.75rem 0;
+            color: #f8fafc;
+            font-weight: 700;
+            letter-spacing: -0.01em;
         }
 
         .hub-subtitle {
-            margin-top: 0.8rem;
-            max-width: 62rem;
-            font-size: 1.03rem;
+            margin-top: 1rem;
+            max-width: 65rem;
+            font-size: 1.15rem;
+            color: #94a3b8;
+            line-height: 1.6;
+            font-weight: 400;
+        }
+
+        .workspace-copy,
+        .hub-card p {
+            color: #cbd5e1;
+            line-height: 1.6;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .hub-card li {
+            color: #94a3b8;
+            line-height: 1.6;
+            font-size: 0.95rem;
+            margin-bottom: 0.4rem;
         }
 
         .hub-chip-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 0.55rem;
-            margin-top: 1rem;
+            gap: 0.6rem;
+            margin-top: 1.25rem;
         }
 
         .hub-chip,
         .hub-status {
             display: inline-flex;
             align-items: center;
-            border-radius: 999px;
-            padding: 0.32rem 0.78rem;
-            font-size: 0.82rem;
+            border-radius: 8px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
             font-weight: 600;
+            letter-spacing: 0.02em;
+            transition: all 0.2s ease;
         }
 
         .hub-chip {
-            background: rgba(15, 23, 42, 0.56);
-            border: 1px solid rgba(103, 232, 249, 0.24);
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.2);
             color: #e2e8f0;
+        }
+        
+        .hub-chip:hover {
+            background: rgba(51, 65, 85, 0.8);
+            border-color: rgba(148, 163, 184, 0.4);
         }
 
         .hub-status {
-            background: rgba(34, 197, 94, 0.18);
-            border: 1px solid rgba(34, 197, 94, 0.28);
-            color: #bbf7d0;
-            margin-bottom: 0.7rem;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            margin-bottom: 1rem;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.05);
         }
 
         .hub-card,
         .workspace-card {
-            padding: 1.25rem 1.4rem;
+            padding: 2rem;
             height: 100%;
+            display: flex;
+            flex-direction: column;
         }
 
         .hub-card ul {
-            margin: 0.8rem 0 0 1rem;
+            margin: 1rem 0 0 1.2rem;
             padding: 0;
+            flex-grow: 1;
         }
 
         .workspace-card {
-            margin: 0.3rem 0 1rem 0;
+            margin: 0.5rem 0 1.5rem 0;
+        }
+        
+        /* Custom styled st.button to match */
+        div.stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            border: none;
+            box-shadow: 0 4px 15px rgba(14, 165, 233, 0.3);
+            transition: all 0.2s ease;
+            font-weight: 600;
+        }
+        div.stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, #38bdf8, #818cf8);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(14, 165, 233, 0.4);
         }
         </style>
         """,
@@ -1193,6 +1319,14 @@ def main():
 
     if current_page == "projects":
         _render_projects_page()
+        return
+
+    if current_page == "cosmos_sentinel":
+        _render_cosmos_sentinel_page()
+        return
+
+    if current_page == "syndrome_net":
+        _render_syndrome_net_page()
         return
 
     _render_workspace_page(enabled_model_keys, default_model_key, manager)

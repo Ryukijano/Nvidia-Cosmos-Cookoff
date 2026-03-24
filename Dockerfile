@@ -7,7 +7,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SPACE_DEFAULT_MODEL=dinov2 \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
     STREAMLIT_SERVER_FILE_WATCHER_TYPE=none \
-    STREAMLIT_SERVER_RUN_ON_SAVE=false
+    STREAMLIT_SERVER_RUN_ON_SAVE=false \
+    COSMOS_SPACE_CACHE_DIR=/data/cosmos_sentinel \
+    COSMOS_PREDICT_MODEL=2B/post-trained \
+    HF_HOME=/data/.huggingface
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
