@@ -1,5 +1,6 @@
 import torch
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+import transformers
+from transformers import AutoProcessor
 import cv2
 from PIL import Image
 import ast
@@ -20,16 +21,33 @@ def resolve_hf_token():
     return os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
 
 
+def resolve_reason_model_class():
+    model_cls = getattr(transformers, "Qwen3VLForConditionalGeneration", None)
+    if model_cls is not None:
+        return model_cls, {}
+
+    fallback_cls = getattr(transformers, "AutoModelForImageTextToText", None)
+    if fallback_cls is not None:
+        return fallback_cls, {"trust_remote_code": True}
+
+    raise RuntimeError(
+        "The installed transformers package does not provide Qwen3-VL support. "
+        "Please install transformers>=4.57.0 for Cosmos-Reason2 models."
+    )
+
+
 @lru_cache(maxsize=2)
 def get_reason_model_bundle(model_name=DEFAULT_REASON_MODEL_NAME):
     print(f"Loading base Cosmos Reason model: {model_name}")
     token = resolve_hf_token()
+    model_cls, model_extra_kwargs = resolve_reason_model_class()
     try:
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model = model_cls.from_pretrained(
             model_name,
             device_map="auto",
             torch_dtype=torch.float16,
             token=token,
+            **model_extra_kwargs,
         )
         print("Using pretrained checkpoint only; adapter loading is disabled")
         processor = AutoProcessor.from_pretrained(model_name, token=token)
