@@ -40,4 +40,4 @@ RUN python3 -m pip install --upgrade pip && \
 COPY --chown=user . /app
 
 EXPOSE 7860
-CMD ["python3", "start_space.py"]
+CMD ["python3", "-m", "streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0", "--server.headless=true", "--server.fileWatcherType=none", "--server.runOnSave=false", "--browser.gatherUsageStats=false"]
