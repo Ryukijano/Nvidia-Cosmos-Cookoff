@@ -17,8 +17,30 @@ from extract_clip import extract_pre_alert_clip
 from predict_backend import get_predict_inference, run_predict_bundle
 
 SPACE_ROOT = Path(__file__).resolve().parent
-CACHE_ROOT = Path(os.environ.get("COSMOS_SPACE_CACHE_DIR") or ("/data/cosmos_sentinel" if Path("/data").exists() else (SPACE_ROOT / ".cache" / "cosmos_sentinel")))
-HF_HOME_PATH = Path(os.environ.get("HF_HOME") or ("/data/.huggingface" if Path("/data").exists() else CACHE_ROOT / ".huggingface"))
+_DEFAULT_CACHE_ROOT = Path.home() / ".cache" / "cosmos_sentinel"
+_DEFAULT_HF_HOME = Path.home() / ".cache" / "huggingface"
+
+
+def _ensure_writable_dir(preferred: Path, fallback: Path, label: str) -> Path:
+    try:
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    except PermissionError:
+        print(f"⚠️ {label} not writable at {preferred}; falling back to {fallback}")
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+CACHE_ROOT = _ensure_writable_dir(
+    Path(os.environ.get("COSMOS_SPACE_CACHE_DIR") or _DEFAULT_CACHE_ROOT),
+    _DEFAULT_CACHE_ROOT,
+    "COSMOS_SPACE_CACHE_DIR",
+)
+HF_HOME_PATH = _ensure_writable_dir(
+    Path(os.environ.get("HF_HOME") or _DEFAULT_HF_HOME),
+    _DEFAULT_HF_HOME,
+    "HF_HOME",
+)
 SAMPLE_VIDEO_URL = os.environ.get(
     "COSMOS_SAMPLE_VIDEO_URL",
     "https://raw.githubusercontent.com/Ryukijano/Nvidia-Cosmos-Cookoff/main/1_first.mp4",
@@ -26,9 +48,7 @@ SAMPLE_VIDEO_URL = os.environ.get(
 PREDICT_OUTPUT_ROOT = CACHE_ROOT / "predict_outputs"
 PREDICT_MODEL_NAME = os.environ.get("COSMOS_PREDICT_MODEL", "2B/post-trained")
 
-os.environ.setdefault("HF_HOME", str(HF_HOME_PATH))
-CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-HF_HOME_PATH.mkdir(parents=True, exist_ok=True)
+os.environ["HF_HOME"] = str(HF_HOME_PATH)
 PREDICT_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
