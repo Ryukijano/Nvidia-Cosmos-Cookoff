@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import socket
 import time
 from pathlib import Path
 
@@ -67,20 +68,33 @@ def _acquire_startup_lock(lock_path: str = "/tmp/catcon_space_repo_start.lock") 
     return lock_file
 
 
+def _can_bind_port(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+    return True
+
+
 def _wait_for_port_release(port: int, timeout: float = 120.0) -> None:
     deadline = time.time() + timeout
     last_reported: tuple[int, ...] | None = None
 
     while True:
         listeners = [pid for pid in _listener_pids(port) if pid not in {os.getpid(), os.getppid()}]
-        if not listeners:
+        if not listeners and _can_bind_port(port):
             return
 
         listener_signature = tuple(listeners)
         if listener_signature != last_reported:
-            print(f"Port {port} is already in use; waiting for listener(s) to exit: {listeners}", flush=True)
-            for pid in listeners:
-                print(f" - pid {pid}: {_pid_command(pid)}", flush=True)
+            if listeners:
+                print(f"Port {port} is already in use; waiting for listener(s) to exit: {listeners}", flush=True)
+                for pid in listeners:
+                    print(f" - pid {pid}: {_pid_command(pid)}", flush=True)
+            else:
+                print(f"Port {port} is still not bindable; waiting before starting Streamlit", flush=True)
             last_reported = listener_signature
 
         if time.time() >= deadline:
