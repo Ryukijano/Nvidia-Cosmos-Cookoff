@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import fcntl
 import os
-import signal
 import time
 from pathlib import Path
 
@@ -60,43 +60,33 @@ def _listener_pids(port: int) -> list[int]:
     return sorted(set(pids))
 
 
-def _terminate_stale_listeners(port: int) -> None:
-    stale_pids = [pid for pid in _listener_pids(port) if pid not in {os.getpid(), os.getppid()}]
-    if not stale_pids:
-        return
+def _acquire_startup_lock(lock_path: str = "/tmp/catcon_space_repo_start.lock") -> object:
+    lock_file = Path(lock_path).open("w")
+    fcntl.flock(lock_file, fcntl.LOCK_EX)
+    os.set_inheritable(lock_file.fileno(), True)
+    return lock_file
 
-    print(f"Port {port} is already in use; terminating stale listener(s): {stale_pids}", flush=True)
-    for pid in stale_pids:
-        try:
-            print(f" - pid {pid}: {_pid_command(pid)}", flush=True)
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            continue
 
-    # Wait for processes to exit and port to be fully released
-    deadline = time.time() + 10.0
-    while time.time() < deadline:
-        remaining = [pid for pid in stale_pids if Path(f"/proc/{pid}").exists()]
-        listeners = _listener_pids(port)
-        if not remaining and not listeners:
-            # Extra safety: wait a bit for TCP TIME_WAIT to clear
-            time.sleep(0.5)
+def _wait_for_port_release(port: int, timeout: float = 120.0) -> None:
+    deadline = time.time() + timeout
+    last_reported: tuple[int, ...] | None = None
+
+    while True:
+        listeners = [pid for pid in _listener_pids(port) if pid not in {os.getpid(), os.getppid()}]
+        if not listeners:
             return
-        time.sleep(0.25)
 
-    # Force kill any remaining processes
-    remaining = [pid for pid in _listener_pids(port) if pid not in {os.getpid(), os.getppid()}]
-    for pid in remaining:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            continue
+        listener_signature = tuple(listeners)
+        if listener_signature != last_reported:
+            print(f"Port {port} is already in use; waiting for listener(s) to exit: {listeners}", flush=True)
+            for pid in listeners:
+                print(f" - pid {pid}: {_pid_command(pid)}", flush=True)
+            last_reported = listener_signature
 
-    # Final wait after SIGKILL
-    time.sleep(1.0)
+        if time.time() >= deadline:
+            raise RuntimeError(f"Port {port} is still busy after waiting {timeout:.0f}s for stale listeners to exit")
 
-    if _listener_pids(port):
-        raise RuntimeError(f"Port {port} is still busy after terminating stale listeners")
+        time.sleep(1.0)
 
 
 def main() -> None:
@@ -105,7 +95,8 @@ def main() -> None:
     os.environ.setdefault("STREAMLIT_SERVER_FILE_WATCHER_TYPE", "none")
     os.environ.setdefault("STREAMLIT_SERVER_RUN_ON_SAVE", "false")
 
-    _terminate_stale_listeners(port)
+    _startup_lock = _acquire_startup_lock()
+    _wait_for_port_release(port)
 
     os.execvp(
         "python3",
