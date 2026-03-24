@@ -450,3 +450,37 @@ def run_predict_only(pipeline_payload, selection="both", predict_model_name=PRED
         merged_artifacts[artifact_key] = artifact_value
     merged["artifacts"] = merged_artifacts
     return predict_payload, merged
+
+
+# Visualization stubs for Streamlit page
+def make_risk_gauge(reason_payload):
+    import plotly.graph_objects as go
+    risk_score = (reason_payload or {}).get("risk_score", 0)
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=risk_score,
+        domain={"x": [0, 1], "y": [0, 1]},
+        title={"text": "Risk Score"},
+        gauge={"axis": {"range": [None, 5]}, "bar": {"color": "orange"}},
+    ))
+    return fig
+
+
+def make_reason_coverage_heatmap(reason_payload):
+    import plotly.graph_objects as go
+    return go.Figure()
+
+
+def make_badas_figure(badas_result):
+    import plotly.graph_objects as go
+    return go.Figure()
+
+
+def make_badas_heatmap(badas_result):
+    import plotly.graph_objects as go
+    return go.Figure()
+
+
+def make_artifact_figure(artifacts):
+    import plotly.graph_objects as go
+    return go.Figure()

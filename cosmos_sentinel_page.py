@@ -15,7 +15,6 @@ import streamlit as st
 
 from cosmos_sentinel_backend import (
     PREDICT_MODEL_NAME,
-    build_outputs,
     cache_uploaded_video,
     ensure_sample_video,
     make_artifact_figure,
