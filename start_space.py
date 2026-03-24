@@ -73,19 +73,27 @@ def _terminate_stale_listeners(port: int) -> None:
         except ProcessLookupError:
             continue
 
+    # Wait for processes to exit and port to be fully released
     deadline = time.time() + 10.0
     while time.time() < deadline:
         remaining = [pid for pid in stale_pids if Path(f"/proc/{pid}").exists()]
-        if not remaining and not _listener_pids(port):
+        listeners = _listener_pids(port)
+        if not remaining and not listeners:
+            # Extra safety: wait a bit for TCP TIME_WAIT to clear
+            time.sleep(0.5)
             return
         time.sleep(0.25)
 
+    # Force kill any remaining processes
     remaining = [pid for pid in _listener_pids(port) if pid not in {os.getpid(), os.getppid()}]
     for pid in remaining:
         try:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             continue
+
+    # Final wait after SIGKILL
+    time.sleep(1.0)
 
     if _listener_pids(port):
         raise RuntimeError(f"Port {port} is still busy after terminating stale listeners")
