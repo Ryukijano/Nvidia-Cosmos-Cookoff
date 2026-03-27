@@ -39,6 +39,7 @@ from video_utils import (
 )
 from cosmos_sentinel_page import _render_cosmos_sentinel_page
 from syndrome_net_page import _render_syndrome_net_page
+from enterprise_dashboard_page import _render_enterprise_dashboard
 
 st.set_page_config(page_title="Ryukijano's Project Portfolio", layout="wide")
 
@@ -91,6 +92,7 @@ PORTFOLIO_PAGE_LABELS = {
     "workspace": "DINO-Endo Surgery",
     "cosmos_sentinel": "Cosmos Sentinel",
     "syndrome_net": "Syndrome-Net QEC",
+    "enterprise_dashboard": "🛡️ Enterprise",
     "projects": "Projects",
 }
 PORTFOLIO_PAGE_SUMMARIES = {
@@ -98,6 +100,7 @@ PORTFOLIO_PAGE_SUMMARIES = {
     "workspace": "Dedicated Dino-Endo Surgery workspace with model controls, explainability, and annotated video playback.",
     "cosmos_sentinel": "Traffic safety AI pipeline with BADAS collision detection, Cosmos Reason narration, and Predict counterfactuals.",
     "syndrome_net": "Quantum Error Correction Lab with surface code circuits, RL decoders, and threshold exploration.",
+    "enterprise_dashboard": "Enterprise Command Center — multi-camera live feeds, API monetisation layer, webhooks, and ROI analytics.",
     "projects": "Project index for all live workspaces and upcoming portfolio pages.",
 }
 
@@ -1327,6 +1330,10 @@ def main():
 
     if current_page == "syndrome_net":
         _render_syndrome_net_page()
+        return
+
+    if current_page == "enterprise_dashboard":
+        _render_enterprise_dashboard()
         return
 
     _render_workspace_page(enabled_model_keys, default_model_key, manager)

@@ -29,5 +29,11 @@ gymnasium>=0.29,<1
 tensorboard>=2.17,<3
 wandb>=0.18,<1
 
+# Enterprise API dependencies
+fastapi>=0.111,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27,<1
+python-multipart>=0.0.9,<1
+
 # Common dependencies
 requests>=2.32,<3
