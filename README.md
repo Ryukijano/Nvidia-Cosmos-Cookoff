@@ -1,176 +1,110 @@
 ---
-title: "Ryukijano's Project Portfolio"
-emoji: 🩺
+title: Cosmos Sentinel
+emoji: 🚦
 colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
+colorTo: red
+sdk: gradio
+sdk_version: "4.0.0"
+app_file: app.py
+pinned: false
 ---
 
-# Ryukijano's Project Portfolio
+# Cosmos Sentinel 🚦
 
-This folder is an isolated Hugging Face Space scaffold for the phase-recognition models in this repository.
-It is intentionally separate from the existing FastAPI webapp and is designed to expose **DINO-Endo, AI-Endo, and V-JEPA2** on paid GPU hardware such as **1x A10G (24 GB VRAM)**.
-The public UI now behaves like a small **project portfolio** with explicit page navigation: a landing home page, a dedicated **DINO-Endo Surgery** workspace page, and a portfolio/projects page for future demos.
-The default featured model remains **DINO-Endo**, but the same Space can load and unload all three model families one at a time.
+Cosmos Sentinel is an agentic, demo-first traffic safety pipeline. It evaluates dashcam and traffic videos by combining early-warning collision prediction with high-level multimodal reasoning and future-state video generation.
 
-## Supported model families
+**[Live Gradio Space](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel)** 
 
-- **AI-Endo**
-  - `resnet50.pth`
-  - `fusion.pth`
-  - `transformer.pth`
-- **DINO-Endo**
-  - `dinov2_vit14s_latest_checkpoint.pth`
-  - `fusion_transformer_decoder_best_model.pth`
-  - optional `dinov2_decoder.pth`
-  - vendored `dinov2/` source tree
-- **V-JEPA2**
-  - `vjepa_encoder_human.pt`
-  - `mlp_decoder_human.pth`
-  - vendored `vjepa2/` source tree
+## 🏗️ Architecture
 
-## Weight delivery strategy
+Cosmos Sentinel runs a three-stage intelligent pipeline:
 
-The default design is:
+1. **Gate:** [BADAS (Ego-Centric Collision Prediction)](https://huggingface.co/nexar-ai/BADAS-Open) acts as a high-frequency predictive gate. It processes the video using V-JEPA2 to find the exact high-risk collision timeframe.
+2. **Reason:** [NVIDIA Cosmos Reason 2](https://github.com/nvidia-cosmos/cosmos-reason2) provides incident understanding. It takes the full video, the BADAS-identified high-risk clip, and generates structured analysis (severity, actor behavior, environmental hazards).
+3. **Predict:** [NVIDIA Cosmos Predict 2.5](https://github.com/nvidia-cosmos/cosmos-predict2.5) acts as a world-simulator. Based on the Reason narrative, it performs "what-if" rollouts (e.g., generating a future where the collision is prevented vs. observed).
 
-1. Keep the **Space repo mostly code-only**.
-2. Upload weights to one or more **Hugging Face model repos**.
-3. Let the Space populate `model/` (or `SPACE_MODEL_DIR`) on demand via `huggingface_hub`.
+### Flow Diagram
 
-This works better than checking all weights directly into the Space repo because code and weights stay versioned separately and Space rebuilds stay lighter.
-A fully local `model/` folder is still supported as a fallback.
+```mermaid
+graph TD
+    A[Input Dashcam Video] -->|Raw Frames| B[BADAS Detector V-JEPA2]
+    B -->|Collision Probabilities| C{Risk Threshold Met?}
+    C -->|No| D[Log: Safe state, Keep monitoring]
+    C -->|Yes| E[Extract Pre-Alert Focused Clip]
+    A --> F[NVIDIA Cosmos Reason 2 8B]
+    E --> F
+    F -->|Risk Analysis & Bounding Boxes| G[Structured Payload Generation]
+    G --> H{Run Predict Rollout?}
+    H -->|Yes| I[NVIDIA Cosmos Predict 2.5 2B]
+    I -->|Prompt: Prevented Collision| J[Counterfactual Video]
+    I -->|Prompt: Observed Trajectory| K[Continuation Video]
+    G --> L[Gradio UI Dashboard]
+    J --> L
+    K --> L
+```
 
-## Default Space behavior
+## 🚀 Features
 
-The Docker Space is configured to boot as a **three-model public demo** with **DINO-Endo** selected by default:
+- **End-to-End Pipeline:** Fully orchestrated from raw MP4 video to intelligent analysis and generated video continuations.
+- **Gradio UI:** An optimized Gradio interface for Hugging Face Spaces with ZeroGPU support and intelligent model caching.
+- **Visual Diagnostics:** Generates gradient saliency maps, bounding box overlays, risk gauges, and artifact heatmaps dynamically.
 
-- `SPACE_ENABLED_MODELS=dinov2,aiendo,vjepa2`
-- `SPACE_DEFAULT_MODEL=dinov2`
-
-If you want to narrow the public picker to a subset of models, override those environment variables in Space Settings, for example:
+## 📂 Repository Structure
 
 ```text
-SPACE_ENABLED_MODELS=dinov2
-SPACE_DEFAULT_MODEL=dinov2
+.
+├── app.py                    # Gradio UI (Hugging Face Spaces entry point)
+├── badas_detector.py         # BADAS model loading and sliding-window inference
+├── cosmos_risk_narrator.py   # Cosmos Reason 2 prompt building and inference
+├── cosmos_predict_runner.py  # Cosmos Predict 2.5 generation logic
+├── extract_clip.py           # Focused clip extraction utility
+└── main_pipeline.py          # CLI orchestration for the full pipeline
 ```
 
-The Dockerfile is also set up to be **HF Dev Mode compatible**:
+## 💻 Quickstart
 
-- app code lives under `/app`
-- `/app` is owned by uid `1000`
-- the required Dev Mode packages (`bash`, `curl`, `wget`, `procps`, `git`, `git-lfs`) are installed
+### 1. Requirements
 
-## Runtime configuration
+- NVIDIA GPU (Ampere or newer, e.g., RTX 3090, A100, H100)
+- Linux (Ubuntu 22.04+)
+- Python 3.10+
 
-The app looks for model files in `SPACE_MODEL_DIR` first. When that env var is unset, the runtime prefers persistent `/data/model`, then falls back to `~/.cache/huggingface/models`, and only uses a local bundled `model/` directory when actual checkpoint files are already present there.
-If a required checkpoint is missing locally, it will try to download it from the configured model repo(s).
-
-### Upload and dashboard behavior
-
-- The Space now routes across multiple portfolio pages instead of stacking everything into a single long screen.
-- The **Home** page acts as the landing site for **Ryukijano's Project Portfolio**.
-- The **DINO-Endo Surgery** page is the dedicated hosted workspace for image/video inference.
-- The **Projects** page lists the current live workspace plus the next planned portfolio pages.
-- The active model family is selected through a visible **model slider** in the workspace rather than a hidden picker.
-- The Space now keeps a single active predictor loaded at a time and unloads the previous model when the model slider changes.
-- The workspace now performs a per-model artifact preflight so each model reports **ready**, **downloadable on first use**, or **missing artifacts** instead of surfacing raw Hub 404s as a generic load failure.
-- MP4 is the primary video upload format, while `mov`, `avi`, `mkv`, `webm`, and `m4v` remain enabled as fallback containers.
-- `.streamlit/config.toml` raises the default Streamlit single-file upload ceiling to **4096 MB** and disables file watching / usage telemetry so runtime cache writes do not trigger restart loops.
-- Uploaded videos are immediately spooled to local disk for metadata probing and analysis, instead of repeatedly reading the in-memory upload object on every rerun.
-- Video analysis now produces an **annotated playback clip** with the predicted phase HUD burned directly onto the video frames, echoing the overlay style from the main `webapp/` dashboard.
-- The UI shows file size, duration, fps, frame count, resolution, working-storage headroom, and suppresses inline preview for very large uploads to keep the browser path lighter.
-- V-JEPA2 is labeled as a slower first load so users understand the cold-cache cost of its very large encoder checkpoint.
-
-### Explainability behavior
-
-- The sidebar includes an opt-in live explainability toggle for encoder/decoder visualizations.
-- DINO-Endo and V-JEPA2 use true encoder self-attention maps, while AI-Endo uses a labeled proxy encoder overlay from ResNet activations.
-- AI-Endo and DINO-Endo render decoder-side temporal attention strips from the custom Transformer path.
-- V-JEPA2 renders a labeled proxy temporal strip from decoder feature energy because its classifier head is an MLP, not an attention block.
-- Encoder controls expose **layer/head sliders** when the loaded model supports true encoder attention.
-
-### Common environment variables
-
-- `SPACE_ENABLED_MODELS` — comma-separated list of model families to expose in the UI
-- `SPACE_DEFAULT_MODEL` — default selected model when multiple model families are enabled
-- `SPACE_MODEL_DIR` — local directory where checkpoints should live (default: `/data/model` when writable, otherwise `~/.cache/huggingface/models`)
-- `PHASE_MODEL_REPO_ID` — shared HF model repo for all weights
-- `PHASE_MODEL_REVISION` — optional shared revision/tag/commit
-- `HF_TOKEN` — only needed for private or gated repos
-
-If `HF_HOME` / `HF_HUB_CACHE` are not set explicitly, the app will automatically use persistent `/data` storage when it exists and otherwise fall back to the standard cache under the app user's home directory.
-
-## Dependency files
-
-- `runtime-requirements.txt` is the actual Docker runtime dependency set used by the app image.
-- It includes the extra V-JEPA2 runtime libraries (`timm`, `einops`) needed for that encoder path to load successfully inside the Space container.
-- Root `requirements.txt` is kept intentionally minimal so Hugging Face Spaces Dev Mode bootstrap layers do not try to reinstall the full CUDA/PyTorch stack outside the Docker image.
-
-### Per-model overrides
-
-- `AIENDO_MODEL_REPO_ID`, `DINO_MODEL_REPO_ID`, `VJEPA2_MODEL_REPO_ID`
-- `AIENDO_MODEL_REVISION`, `DINO_MODEL_REVISION`, `VJEPA2_MODEL_REVISION`
-- `AIENDO_MODEL_SUBFOLDER`, `DINO_MODEL_SUBFOLDER`, `VJEPA2_MODEL_SUBFOLDER`
-
-Use subfolder env vars if you store multiple model families in one repo under different directories.
-
-## Local development vs. publishing
-
-The required vendored `dinov2/` and `vjepa2/` source trees are now staged inside this folder, so the Space scaffold is self-contained.
-If those upstream source trees change and you want to refresh the copies here, run:
+### 2. Install Dependencies
 
 ```bash
-python scripts/stage_vendor_sources.py --overwrite
+pip install -r requirements.txt
 ```
 
-That script refreshes the vendored source copies inside this folder before publishing.
+*Note: If you want to use the Cosmos Predict module locally, you must follow the [Cosmos Predict 2.5 Setup Guide](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/README.md) to install its specific `uv` workspace dependencies.*
 
-## Publishing checklist
+### 3. Authentication
 
-1. Populate the Space folder files here.
-2. Run `python scripts/stage_vendor_sources.py --overwrite` if you need to refresh the vendored source copies.
-3. Push the contents of this folder to a Hugging Face **Docker Space**.
-4. Upload your checkpoints to HF **model repo(s)**.
-5. Configure the relevant repo IDs (and `HF_TOKEN` only if the repos are private).
-
-### Deployment helper scripts
-
-- `python scripts/stage_space_bundle.py --overwrite --output-dir /tmp/dino_space_minimal_upload`
-  - stages a code-only upload bundle for the current multi-model Space without local caches or checkpoints.
-- `python scripts/publish_model_repo.py --family aiendo --repo-id <owner/repo> --model-dir /path/to/model`
-  - publishes one model family to a Hugging Face **model repo** and automatically switches to `upload_large_folder()` for very large bundles.
-- `python scripts/publish_space_repo.py --repo-id <owner/space> --dino-model-repo-id <owner/dino-repo> --aiendo-model-repo-id <owner/aiendo-repo> --vjepa2-model-repo-id <owner/vjepa2-repo>`
-  - stages/uploads the Docker Space bundle and updates the key Space environment variables for the three-model demo.
-
-## Local smoke test
-
-Once the Space dependencies are installed, you can smoke test a predictor directly:
+You need a Hugging Face token to download the gated models (BADAS and Cosmos).
 
 ```bash
-python scripts/smoke_test.py --model dinov2 --model-dir /path/to/model
-python scripts/smoke_test.py --model aiendo --model-dir /path/to/model
-python scripts/smoke_test.py --model vjepa2 --model-dir /path/to/model
+export HF_TOKEN="your_hugging_face_token"
+# Optional: Set a persistent cache directory to avoid re-downloading models
+export HF_HOME="/path/to/your/large/storage/.huggingface"
 ```
 
-## Scope of v1
+### 4. Run the Gradio App
 
-- Streamlit UI
-- project-portfolio landing page with separate Home, DINO-Endo Surgery, and Projects pages
-- three-model slider for DINO-Endo, AI-Endo, and V-JEPA2, with DINO-Endo selected by default
-- image upload and video upload
-- dashboard-style model/runtime status
-- robust video metadata probing with OpenCV + ffprobe fallback
-- annotated overlay playback for analysed videos
-- large single-file uploads up to the configured Streamlit cap
-- per-frame phase timeline output for video
-- optional live encoder/decoder explainability sidebar with true attention where available and labeled proxies elsewhere
-- JSON / CSV export
+```bash
+python app.py
+```
 
-Not included in v1:
+## ☁️ Hugging Face Space Deployment
 
-- auth / user management
-- SQL database
-- PDF/HTML report generation
-- background queue processing
-- polyp segmentation
+This branch (`huggingface-spaces`) is the source for the [Cosmos Sentinel Hugging Face Space](https://huggingface.co/spaces/Ryukijano/Cosmos_Sentinel). Push directly to HF Spaces from this branch.
+
+It is optimized for:
+- **ZeroGPU:** Dynamic `@spaces.GPU` allocation to prevent timeouts during long downloads.
+- **Persistent Storage:** Reads `HF_HOME=/data/.huggingface` to cache the 30GB+ of models across restarts.
+- **Graceful Degradation:** Skips Cosmos Predict locally in the Space to avoid complex workspace dependency issues, focusing purely on the core BADAS + Reason pipeline.
+
+## 📚 Acknowledgements & References
+
+- [BADAS: Ego-Centric Collision Prediction](https://arxiv.org/abs/2510.14876)
+- [NVIDIA Cosmos Models Overview](https://docs.nvidia.com/cosmos/latest/introduction.html)
+- [NVIDIA Cosmos Reason 2 GitHub](https://github.com/nvidia-cosmos/cosmos-reason2)
+- [NVIDIA Cosmos Predict 2.5 GitHub](https://github.com/nvidia-cosmos/cosmos-predict2.5)
